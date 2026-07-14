@@ -4,19 +4,19 @@
 //! "original pixel". For painting it is more useful to see those pixels at
 //! roughly the original resolution, separated by a grid. Each original pixel
 //! is drawn as a square block of `cell` output pixels, and white grid lines
-//! are drawn between blocks.
+//! are drawn at the coarse structural boundaries.
 //!
-//! The grid has three line thicknesses:
+//! The grid has two line thicknesses:
 //!
-//! * the **thinnest** (1px) lines separate every original pixel;
 //! * **medium** lines divide each half of the image into quarters (the 1/4 and
 //!   3/4 boundaries);
 //! * the **thickest** lines divide the whole image in half, horizontally and
 //!   vertically (the 1/2 boundary).
 //!
-//! A line at a coarser level replaces the finer line that would otherwise sit
-//! at the same boundary, so each boundary is drawn exactly once at its
-//! coarsest applicable thickness.
+//! Lines are *not* drawn between every individual pixel: at any real
+//! resolution that would drown the image in grid. Only the half and quarter
+//! dividers are drawn. Where boundaries coincide the coarser (thicker) level
+//! wins, so each boundary is drawn exactly once.
 
 use anyhow::{Result, ensure};
 use image::{Rgb, RgbImage};
@@ -25,14 +25,8 @@ use image::{Rgb, RgbImage};
 const GRID_COLOR: Rgb<u8> = Rgb([255, 255, 255]);
 
 /// Line thickness, in output pixels, for each grid level.
-const THIN_WIDTH: u32 = 1;
 const MEDIUM_WIDTH: u32 = 2;
 const THICK_WIDTH: u32 = 3;
-
-/// The largest number of original pixels, in either dimension, for which the
-/// thin inter-pixel grid lines are still drawn. Beyond this the fine grid is
-/// omitted (the coarser dividers remain).
-const MAX_FINE_GRID_DIM: u32 = 100;
 
 /// Maximum relative deviation allowed between the input aspect ratio and the
 /// target `width:height` aspect ratio.
@@ -57,15 +51,11 @@ pub fn render(pixelated: &RgbImage, input_dims: (u32, u32)) -> Result<RgbImage> 
     check_aspect_ratio(in_w, in_h, grid_w, grid_h)?;
     let cell = cell_size(in_w, in_h, grid_w, grid_h);
 
-    // With many original pixels, a 1px line between every pair would drown the
-    // image in grid, so the finest (inter-pixel) lines are dropped past a
-    // threshold; the coarser half/quarter dividers are always kept.
-    let fine_grid = grid_w <= MAX_FINE_GRID_DIM && grid_h <= MAX_FINE_GRID_DIM;
-
     // Precompute the line thickness at each interior boundary. Boundary `i`
-    // (for i in 1..grid_dim) sits between original pixels i-1 and i.
-    let x_lines = boundary_widths(grid_w, fine_grid);
-    let y_lines = boundary_widths(grid_h, fine_grid);
+    // (for i in 1..grid_dim) sits between original pixels i-1 and i. Only the
+    // half and quarter dividers get a line; the rest are 0 (no line).
+    let x_lines = boundary_widths(grid_w);
+    let y_lines = boundary_widths(grid_h);
 
     // The total size is the blocks plus every line's pixels laid between them.
     let out_w = grid_w * cell + x_lines.iter().sum::<u32>();
@@ -121,17 +111,15 @@ fn cell_size(in_w: u32, in_h: u32, grid_w: u32, grid_h: u32) -> u32 {
 ///
 /// Index `i` in the returned vector (length `dim - 1`) is the thickness of the
 /// boundary between original pixels `i` and `i + 1`. The half boundary is
-/// thickest, the quarter boundaries medium, all others thin. A coarser level
-/// wins where boundaries coincide.
-///
-/// When `fine_grid` is false, the thin inter-pixel lines are omitted (width
-/// `0`); only the half and quarter dividers remain.
-fn boundary_widths(dim: u32, fine_grid: bool) -> Vec<u32> {
+/// thickest, the quarter boundaries medium, and every other (inter-pixel)
+/// boundary gets no line (width `0`). A coarser level wins where boundaries
+/// coincide.
+fn boundary_widths(dim: u32) -> Vec<u32> {
     if dim < 2 {
         return Vec::new();
     }
-    // Boundary positions, as pixel counts from the start, that get thicker
-    // lines. Using rounding keeps them centered when `dim` is not divisible.
+    // Boundary positions, as pixel counts from the start, that get lines.
+    // Using rounding keeps them centered when `dim` is not divisible.
     let half = ((dim as f64) / 2.0).round() as u32;
     let quarter = ((dim as f64) / 4.0).round() as u32;
     let three_quarter = ((dim as f64) * 3.0 / 4.0).round() as u32;
@@ -142,8 +130,6 @@ fn boundary_widths(dim: u32, fine_grid: bool) -> Vec<u32> {
                 THICK_WIDTH
             } else if i == quarter || i == three_quarter {
                 MEDIUM_WIDTH
-            } else if fine_grid {
-                THIN_WIDTH
             } else {
                 0
             }
@@ -231,51 +217,34 @@ mod tests {
     }
 
     #[test]
-    fn boundary_widths_marks_half_and_quarters() {
-        // dim=8: half at 4 (thick), quarter at 2, three_quarter at 6 (medium).
-        let w = boundary_widths(8, true);
+    fn boundary_widths_marks_only_half_and_quarters() {
+        // dim=8: half at 4 (thick), quarter at 2, three_quarter at 6 (medium);
+        // every inter-pixel boundary is 0 (no line).
+        let w = boundary_widths(8);
         assert_eq!(w.len(), 7);
         assert_eq!(w[3], THICK_WIDTH); // boundary index 3 == position 4
         assert_eq!(w[1], MEDIUM_WIDTH); // position 2
         assert_eq!(w[5], MEDIUM_WIDTH); // position 6
-        assert_eq!(w[0], THIN_WIDTH);
-    }
-
-    #[test]
-    fn coarse_grid_omits_thin_lines_but_keeps_dividers() {
-        // Without the fine grid, thin boundaries are 0 while the half and
-        // quarter dividers still carry their thickness.
-        let w = boundary_widths(8, false);
-        assert_eq!(w.len(), 7);
-        assert_eq!(w[3], THICK_WIDTH); // half divider kept
-        assert_eq!(w[1], MEDIUM_WIDTH); // quarter divider kept
-        assert_eq!(w[5], MEDIUM_WIDTH); // three-quarter divider kept
-        assert_eq!(w[0], 0); // thin inter-pixel line dropped
+        assert_eq!(w[0], 0); // inter-pixel boundary: no line
         assert_eq!(w[2], 0);
+        assert_eq!(w[4], 0);
+        assert_eq!(w[6], 0);
     }
 
     #[test]
-    fn fine_grid_dropped_past_threshold() {
-        // A grid larger than the threshold in one dimension must not draw thin
-        // lines. Build a 101x76 grid (~4:3) against a matching input; count the
-        // thin boundaries that survive: only the dividers should remain.
-        let px = solid(101, 76, Rgb([5, 5, 5]));
-        let out = render(&px, (101, 76)).unwrap();
-        // cell = 1, so output width = 101*1 + sum(x_lines). If the fine grid
-        // were on, x_lines would sum to ~100+; with it off, only 3 dividers
-        // per axis (quarter+half+three_quarter) contribute.
-        let expected_x_lines = MEDIUM_WIDTH + THICK_WIDTH + MEDIUM_WIDTH;
-        assert_eq!(out.dimensions().0, 101 + expected_x_lines);
-    }
-
-    #[test]
-    fn fine_grid_kept_at_threshold() {
-        // Exactly at the threshold (100) the fine grid is still drawn.
-        let px = solid(100, 75, Rgb([5, 5, 5])); // 4:3
-        let out = render(&px, (100, 75)).unwrap();
-        // With the fine grid on, there are far more than the 3 divider lines,
-        // so the output width exceeds 100 + the divider-only total.
-        let dividers_only = 100 + MEDIUM_WIDTH + THICK_WIDTH + MEDIUM_WIDTH;
-        assert!(out.dimensions().0 > dividers_only);
+    fn no_fine_grid_regardless_of_size() {
+        // Even for a large grid, only the three dividers per axis are drawn;
+        // there are never inter-pixel lines. With cell size 1 (input == grid),
+        // the output is grid_dim plus exactly the divider widths.
+        for dim in [8u32, 100, 200, 400] {
+            let px = solid(dim, dim, Rgb([5, 5, 5]));
+            let out = render(&px, (dim, dim)).unwrap();
+            let divider_total = MEDIUM_WIDTH + THICK_WIDTH + MEDIUM_WIDTH;
+            assert_eq!(
+                out.dimensions().0,
+                dim + divider_total,
+                "unexpected width for dim {dim}"
+            );
+        }
     }
 }
