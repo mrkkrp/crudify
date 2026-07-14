@@ -32,6 +32,46 @@ pub struct Derivation {
     /// (already downscaled) image does not contain that many distinct colors.
     /// It places no constraint on *which* colors may be used.
     pub palette_size: u32,
+    /// How the palette is chosen. Defaults to [`PaletteStrategy::Frequency`],
+    /// which reproduces the original frequency-weighted behavior.
+    #[serde(default)]
+    pub palette_strategy: PaletteStrategy,
+    /// How strongly the saliency strategies favor vivid and rare colors, in
+    /// the range `0.0..=1.0`. Ignored by [`PaletteStrategy::Frequency`].
+    /// Defaults to [`default_accent_strength`].
+    #[serde(default = "default_accent_strength")]
+    pub accent_strength: f64,
+    /// The number of palette slots reserved for detected accent colors, used
+    /// only by the `reserve_accents` strategies. When absent, a strategy-chosen
+    /// number is used.
+    #[serde(default)]
+    pub accent_slots: Option<u32>,
+}
+
+/// The palette selection strategy for a derivation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PaletteStrategy {
+    /// Frequency-weighted clustering in exoquant's color space (the original
+    /// behavior). Tends to average away small vivid accents.
+    #[default]
+    Frequency,
+    /// Reweight the histogram to favor vivid and rare colors, then cluster in
+    /// exoquant's color space.
+    Saliency,
+    /// Like [`Saliency`](Self::Saliency), but cluster in the perceptual OKLab
+    /// space so distinct hues resist being merged.
+    SaliencyOklab,
+    /// Reserve slots for detected accent colors, then cluster the remainder in
+    /// exoquant's color space.
+    ReserveAccents,
+    /// Like [`ReserveAccents`](Self::ReserveAccents), but cluster in OKLab.
+    ReserveAccentsOklab,
+}
+
+/// The default value for [`Derivation::accent_strength`].
+pub fn default_accent_strength() -> f64 {
+    0.5
 }
 
 impl Config {
@@ -68,6 +108,70 @@ derivations:
         assert_eq!(config.derivations[0].height, 48);
         assert_eq!(config.derivations[0].palette_size, 16);
         assert_eq!(config.derivations[1].output, PathBuf::from("tiny.png"));
+    }
+
+    #[test]
+    fn palette_fields_default_when_absent() {
+        let yaml = "
+input: photo.png
+derivations:
+  - output: small.png
+    width: 64
+    height: 48
+    palette_size: 16
+";
+        let config: Config = serde_yaml::from_str(yaml).unwrap();
+        let d = &config.derivations[0];
+        assert_eq!(d.palette_strategy, PaletteStrategy::Frequency);
+        assert_eq!(d.accent_strength, default_accent_strength());
+        assert_eq!(d.accent_slots, None);
+    }
+
+    #[test]
+    fn parses_snake_case_palette_strategies() {
+        for (name, expected) in [
+            ("frequency", PaletteStrategy::Frequency),
+            ("saliency", PaletteStrategy::Saliency),
+            ("saliency_oklab", PaletteStrategy::SaliencyOklab),
+            ("reserve_accents", PaletteStrategy::ReserveAccents),
+            (
+                "reserve_accents_oklab",
+                PaletteStrategy::ReserveAccentsOklab,
+            ),
+        ] {
+            let yaml = format!(
+                "
+input: photo.png
+derivations:
+  - output: small.png
+    width: 64
+    height: 48
+    palette_size: 16
+    palette_strategy: {name}
+    accent_strength: 0.7
+    accent_slots: 2
+"
+            );
+            let config: Config = serde_yaml::from_str(&yaml).unwrap();
+            let d = &config.derivations[0];
+            assert_eq!(d.palette_strategy, expected, "strategy {name}");
+            assert_eq!(d.accent_strength, 0.7);
+            assert_eq!(d.accent_slots, Some(2));
+        }
+    }
+
+    #[test]
+    fn rejects_kebab_case_palette_strategy() {
+        let yaml = "
+input: photo.png
+derivations:
+  - output: small.png
+    width: 64
+    height: 48
+    palette_size: 16
+    palette_strategy: saliency-oklab
+";
+        assert!(serde_yaml::from_str::<Config>(yaml).is_err());
     }
 
     #[test]

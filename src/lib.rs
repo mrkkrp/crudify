@@ -9,6 +9,7 @@
 pub mod config;
 pub mod grid;
 pub mod image_io;
+pub mod palette;
 pub mod pixelate;
 
 use std::path::Path;
@@ -43,6 +44,11 @@ pub fn run(config_path: impl AsRef<Path>) -> Result<()> {
             derivation.width,
             derivation.height,
             derivation.palette_size,
+            pixelate::PaletteOptions {
+                strategy: derivation.palette_strategy,
+                accent_strength: derivation.accent_strength,
+                accent_slots: derivation.accent_slots,
+            },
         )
         .with_context(|| {
             format!(

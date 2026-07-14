@@ -13,17 +13,37 @@
 //!    of the source pixels that map into it, then snapped to the nearest
 //!    palette color (constraint: downsampled resolution).
 //!
-//! This is the initial, deliberately approximate implementation. It uses
-//! `exoquant` only for the clustering step in (1); the surrounding structure
-//! is our own and is expected to grow into a fully custom joint optimizer.
+//! This is the initial, deliberately approximate implementation. Palette
+//! selection is delegated to [`crate::palette`], which offers several
+//! strategies for keeping vivid accent colors; the joint downsampling structure
+//! here is our own and is expected to grow into a fully custom optimizer.
 
 use anyhow::{Result, ensure};
-use exoquant::{Color, ColorMap, ColorSpace, Histogram, SimpleColorSpace, optimizer::KMeans};
 use image::{Rgb, RgbImage};
 
+use crate::config::PaletteStrategy;
+use crate::palette;
+
+/// How the palette for a derivation should be selected.
+#[derive(Debug, Clone, Copy)]
+pub struct PaletteOptions {
+    /// The palette selection strategy.
+    pub strategy: PaletteStrategy,
+    /// Strength of the vivid/rare bias for the saliency strategies (`0..=1`).
+    pub accent_strength: f64,
+    /// Reserved accent slots for the reserve-accents strategies.
+    pub accent_slots: Option<u32>,
+}
+
 /// Produce a `width`x`height` image using at most `palette_size` distinct
-/// colors, derived from `source`.
-pub fn pixelate(source: &RgbImage, width: u32, height: u32, palette_size: u32) -> Result<RgbImage> {
+/// colors, derived from `source`, choosing the palette per `options`.
+pub fn pixelate(
+    source: &RgbImage,
+    width: u32,
+    height: u32,
+    palette_size: u32,
+    options: PaletteOptions,
+) -> Result<RgbImage> {
     ensure!(
         width > 0 && height > 0,
         "target dimensions must be non-zero"
@@ -34,17 +54,15 @@ pub fn pixelate(source: &RgbImage, width: u32, height: u32, palette_size: u32) -
         "source image is empty"
     );
 
-    let colorspace = SimpleColorSpace::default();
-
     // (1) Build the palette from the color distribution of the *whole* source
     // image, so palette selection sees every original color.
-    let histogram: Histogram = source
-        .pixels()
-        .map(|Rgb([r, g, b])| Color::new(*r, *g, *b, 255))
-        .collect();
-    let palette =
-        exoquant::generate_palette(&histogram, &colorspace, &KMeans, palette_size as usize);
-    let color_map = ColorMap::new(&palette, &colorspace);
+    let palette = palette::build(
+        source,
+        palette_size,
+        options.strategy,
+        options.accent_strength,
+        options.accent_slots,
+    );
 
     // (2) Downsample: each output cell averages the source pixels that map into
     // it, then snaps to the nearest palette color.
@@ -53,9 +71,7 @@ pub fn pixelate(source: &RgbImage, width: u32, height: u32, palette_size: u32) -
         for ox in 0..width {
             let region = cell_region(source.width(), source.height(), width, height, ox, oy);
             let average = average_color(source, region);
-            let index = color_map.find_nearest(colorspace.to_float(average));
-            let Color { r, g, b, .. } = palette[index];
-            output.put_pixel(ox, oy, Rgb([r, g, b]));
+            output.put_pixel(ox, oy, palette.nearest(average));
         }
     }
 
@@ -84,7 +100,7 @@ fn cell_region(
 }
 
 /// Average of the source pixels in the given half-open region.
-fn average_color(source: &RgbImage, region: (u32, u32, u32, u32)) -> Color {
+fn average_color(source: &RgbImage, region: (u32, u32, u32, u32)) -> Rgb<u8> {
     let (x0, x1, y0, y1) = region;
     let (mut r, mut g, mut b) = (0u64, 0u64, 0u64);
     let mut count = 0u64;
@@ -99,12 +115,20 @@ fn average_color(source: &RgbImage, region: (u32, u32, u32, u32)) -> Color {
     }
     // `cell_region` guarantees at least one pixel, so `count` is never zero.
     let count = count.max(1);
-    Color::new((r / count) as u8, (g / count) as u8, (b / count) as u8, 255)
+    Rgb([(r / count) as u8, (g / count) as u8, (b / count) as u8])
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn default_options() -> PaletteOptions {
+        PaletteOptions {
+            strategy: PaletteStrategy::Frequency,
+            accent_strength: 0.5,
+            accent_slots: None,
+        }
+    }
 
     fn solid(width: u32, height: u32, color: Rgb<u8>) -> RgbImage {
         RgbImage::from_pixel(width, height, color)
@@ -118,7 +142,7 @@ mod tests {
     #[test]
     fn output_has_requested_dimensions() {
         let src = solid(100, 80, Rgb([10, 20, 30]));
-        let out = pixelate(&src, 20, 16, 8).unwrap();
+        let out = pixelate(&src, 20, 16, 8, default_options()).unwrap();
         assert_eq!(out.dimensions(), (20, 16));
     }
 
@@ -129,7 +153,7 @@ mod tests {
         for (x, y, p) in src.enumerate_pixels_mut() {
             *p = Rgb([(x * 4) as u8, (y * 4) as u8, ((x + y) * 2) as u8]);
         }
-        let out = pixelate(&src, 32, 32, 4).unwrap();
+        let out = pixelate(&src, 32, 32, 4, default_options()).unwrap();
         assert!(
             distinct_colors(&out) <= 4,
             "expected at most 4 colors, got {}",
@@ -142,7 +166,7 @@ mod tests {
         // Only one color in the source, so the output cannot exceed one color
         // even though a larger palette was allowed.
         let src = solid(50, 50, Rgb([200, 100, 50]));
-        let out = pixelate(&src, 10, 10, 16).unwrap();
+        let out = pixelate(&src, 10, 10, 16, default_options()).unwrap();
         assert_eq!(distinct_colors(&out), 1);
         // The single palette color should be close to the source color. It
         // need not be bit-exact: the quantizer works in a gamma-aware color
@@ -154,15 +178,15 @@ mod tests {
     #[test]
     fn upscaling_is_supported() {
         let src = solid(4, 4, Rgb([5, 5, 5]));
-        let out = pixelate(&src, 16, 16, 4).unwrap();
+        let out = pixelate(&src, 16, 16, 4, default_options()).unwrap();
         assert_eq!(out.dimensions(), (16, 16));
     }
 
     #[test]
     fn rejects_zero_dimensions() {
         let src = solid(10, 10, Rgb([0, 0, 0]));
-        assert!(pixelate(&src, 0, 10, 4).is_err());
-        assert!(pixelate(&src, 10, 0, 4).is_err());
-        assert!(pixelate(&src, 10, 10, 0).is_err());
+        assert!(pixelate(&src, 0, 10, 4, default_options()).is_err());
+        assert!(pixelate(&src, 10, 0, 4, default_options()).is_err());
+        assert!(pixelate(&src, 10, 10, 0, default_options()).is_err());
     }
 }
