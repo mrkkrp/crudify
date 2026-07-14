@@ -60,13 +60,9 @@ Each entry in `derivations` describes one output image.
   colors are used.
 * `palette_strategy` (optional, default `frequency`): How the palette is
   chosen. See [Palette strategies](#palette-strategies).
-* `accent_strength` (optional, default `0.5`): How strongly the saliency
-  strategies favor vivid and rare colors, in the range `0.0..=1.0`. Ignored
+* `accent_strength` (optional, default `0.5`): How strongly the `saliency`
+  strategy favors vivid and rare colors, in the range `0.0..=1.0`. Ignored
   by the `frequency` strategy.
-* `accent_slots` (optional, default strategy-chosen): Number of palette
-  slots reserved for detected accent colors. Used only by the
-  `reserve_accents` strategies. When absent, a strategy-chosen number is
-  used.
 * `lightness_compensation` (optional, default `0.0`): How strongly to
   de-emphasize lightness when clustering, in the range `0.0..=1.0`. At
   `0.0` lightness counts fully; at `1.0` it is ignored, so colors are
@@ -83,17 +79,15 @@ resolution is derived automatically from that ratio.
 
 A plain frequency-weighted quantizer spends its color budget on whatever
 dominates the image by pixel count, so small but vivid accents get averaged
-away and the result looks "muddy". The alternative strategies bias palette
-selection toward perceptually important colors so that accents survive.
-Apart from `frequency`, they cluster in the perceptual OKLab color space,
-where distinct hues resist being merged.
+away and the result looks "muddy". The `saliency` strategy instead biases
+palette selection toward perceptually important colors so that accents
+survive, clustering in the perceptual OKLab color space where distinct hues
+resist being merged.
 
 * `frequency`: Frequency-weighted clustering. The default; tends to average
   away small vivid accents.
 * `saliency`: Reweights the histogram to favor vivid (`accent_strength`) and
   rare colors, then clusters in OKLab.
-* `reserve_accents`: Reserves `accent_slots` slots for detected accent
-  colors, then clusters the remaining budget for everything else in OKLab.
 
 ## License
 

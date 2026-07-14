@@ -36,16 +36,11 @@ pub struct Derivation {
     /// which reproduces the original frequency-weighted behavior.
     #[serde(default)]
     pub palette_strategy: PaletteStrategy,
-    /// How strongly the saliency strategies favor vivid and rare colors, in
-    /// the range `0.0..=1.0`. Ignored by [`PaletteStrategy::Frequency`].
-    /// Defaults to [`default_accent_strength`].
+    /// How strongly the [`Saliency`](PaletteStrategy::Saliency) strategy favors
+    /// vivid and rare colors, in the range `0.0..=1.0`. Ignored by
+    /// [`PaletteStrategy::Frequency`]. Defaults to [`default_accent_strength`].
     #[serde(default = "default_accent_strength")]
     pub accent_strength: f64,
-    /// The number of palette slots reserved for detected accent colors, used
-    /// only by the `reserve_accents` strategies. When absent, a strategy-chosen
-    /// number is used.
-    #[serde(default)]
-    pub accent_slots: Option<u32>,
     /// How strongly to de-emphasize lightness when clustering in OKLab, in the
     /// range `0.0..=1.0`. At `0.0` (the default) lightness counts fully; at
     /// `1.0` it is ignored, so colors are separated purely by hue and chroma.
@@ -71,9 +66,6 @@ pub enum PaletteStrategy {
     /// Reweight the histogram to favor vivid and rare colors, then cluster in
     /// OKLab.
     Saliency,
-    /// Reserve slots for detected accent colors, then cluster the remainder in
-    /// OKLab.
-    ReserveAccents,
 }
 
 /// The default value for [`Derivation::accent_strength`].
@@ -131,7 +123,6 @@ derivations:
         let d = &config.derivations[0];
         assert_eq!(d.palette_strategy, PaletteStrategy::Frequency);
         assert_eq!(d.accent_strength, default_accent_strength());
-        assert_eq!(d.accent_slots, None);
         assert_eq!(d.lightness_compensation, 0.0);
     }
 
@@ -140,7 +131,6 @@ derivations:
         for (name, expected) in [
             ("frequency", PaletteStrategy::Frequency),
             ("saliency", PaletteStrategy::Saliency),
-            ("reserve_accents", PaletteStrategy::ReserveAccents),
         ] {
             let yaml = format!(
                 "
@@ -152,14 +142,14 @@ derivations:
     palette_size: 16
     palette_strategy: {name}
     accent_strength: 0.7
-    accent_slots: 2
+    lightness_compensation: 0.3
 "
             );
             let config: Config = serde_yaml::from_str(&yaml).unwrap();
             let d = &config.derivations[0];
             assert_eq!(d.palette_strategy, expected, "strategy {name}");
             assert_eq!(d.accent_strength, 0.7);
-            assert_eq!(d.accent_slots, Some(2));
+            assert_eq!(d.lightness_compensation, 0.3);
         }
     }
 
@@ -172,7 +162,7 @@ derivations:
     width: 64
     height: 48
     palette_size: 16
-    palette_strategy: reserve-accents
+    palette_strategy: nonexistent
 ";
         assert!(serde_yaml::from_str::<Config>(yaml).is_err());
     }

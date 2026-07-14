@@ -29,10 +29,8 @@ use crate::palette;
 pub struct PaletteOptions {
     /// The palette selection strategy.
     pub strategy: PaletteStrategy,
-    /// Strength of the vivid/rare bias for the saliency strategies (`0..=1`).
+    /// Strength of the vivid/rare bias for the saliency strategy (`0..=1`).
     pub accent_strength: f64,
-    /// Reserved accent slots for the reserve-accents strategies.
-    pub accent_slots: Option<u32>,
     /// Lightness de-emphasis for OKLab clustering (`0..=1`); see
     /// [`crate::config::Derivation::lightness_compensation`].
     pub lightness_compensation: f64,
@@ -64,7 +62,6 @@ pub fn pixelate(
         palette_size,
         options.strategy,
         options.accent_strength,
-        options.accent_slots,
         options.lightness_compensation,
     );
 
@@ -130,7 +127,6 @@ mod tests {
         PaletteOptions {
             strategy: PaletteStrategy::Frequency,
             accent_strength: 0.5,
-            accent_slots: None,
             lightness_compensation: 0.0,
         }
     }
