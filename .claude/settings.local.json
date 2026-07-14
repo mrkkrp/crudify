@@ -22,7 +22,10 @@
       "Bash(echo \"===EXIT $?===\")",
       "Bash(git checkout *)",
       "Bash(cargo test *)",
-      "Bash(cargo clippy *)"
+      "Bash(cargo clippy *)",
+      "Bash(cargo build *)",
+      "Bash(cargo run *)",
+      "Bash(echo \"exit=$?\")"
     ]
   }
 }

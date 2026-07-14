@@ -5,12 +5,13 @@ Reduce resolution and number of colors in preparation for painting.
 ## Usage
 
 ```console
-$ crudify config.yaml
+$ crudify config.yaml [config.yaml ...]
 ```
 
-Crudify takes a single argument: the path to a YAML configuration file. All
-paths mentioned in the configuration are resolved relative to the directory
-that contains the configuration file itself.
+Crudify takes one or more arguments: the paths to YAML configuration files,
+each of which is processed in turn. All paths mentioned in a configuration
+are resolved relative to the directory that contains that configuration file
+itself.
 
 For each *derivation*, crudify reduces the input image to the requested
 resolution and palette, then upscales the result back to approximately the

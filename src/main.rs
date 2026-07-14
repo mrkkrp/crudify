@@ -13,12 +13,12 @@ fn main() -> ExitCode {
 }
 
 fn try_main() -> Result<()> {
-    let mut args = std::env::args_os().skip(1);
-    let Some(config_path) = args.next() else {
-        bail!("usage: crudify <config.yaml>");
-    };
-    if args.next().is_some() {
-        bail!("usage: crudify <config.yaml> (expected exactly one argument)");
+    let config_paths: Vec<_> = std::env::args_os().skip(1).collect();
+    if config_paths.is_empty() {
+        bail!("usage: crudify <config.yaml> [config.yaml ...]");
     }
-    crudify::run(config_path)
+    for config_path in config_paths {
+        crudify::run(config_path)?;
+    }
+    Ok(())
 }
