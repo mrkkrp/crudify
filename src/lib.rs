@@ -7,6 +7,7 @@
 //! thin wrapper around [`run`].
 
 pub mod config;
+pub mod grid;
 pub mod image_io;
 pub mod pixelate;
 
@@ -34,8 +35,10 @@ pub fn run(config_path: impl AsRef<Path>) -> Result<()> {
     let source = image_io::load(&input_path)
         .with_context(|| format!("failed to load input image {}", input_path.display()))?;
 
+    let input_dims = source.dimensions();
+
     for derivation in &config.derivations {
-        let output = pixelate::pixelate(
+        let pixelated = pixelate::pixelate(
             &source,
             derivation.width,
             derivation.height,
@@ -44,6 +47,15 @@ pub fn run(config_path: impl AsRef<Path>) -> Result<()> {
         .with_context(|| {
             format!(
                 "failed to process derivation for output {}",
+                derivation.output.display()
+            )
+        })?;
+
+        // Upscale back to approximately the input resolution and overlay the
+        // painting grid.
+        let output = grid::render(&pixelated, input_dims).with_context(|| {
+            format!(
+                "failed to render grid for output {}",
                 derivation.output.display()
             )
         })?;
