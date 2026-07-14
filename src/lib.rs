@@ -38,6 +38,11 @@ pub fn run(config_path: impl AsRef<Path>) -> Result<()> {
 
     let input_dims = source.dimensions();
 
+    // The default lightness compensation is derived once from the input image
+    // so that lightness and hue/chroma contribute equally to clustering; a
+    // derivation may override it with an explicit value.
+    let default_lightness_compensation = palette::adaptive_lightness_compensation(&source);
+
     for derivation in &config.derivations {
         let pixelated = pixelate::pixelate(
             &source,
@@ -47,7 +52,9 @@ pub fn run(config_path: impl AsRef<Path>) -> Result<()> {
             pixelate::PaletteOptions {
                 strategy: derivation.palette_strategy,
                 accent_strength: derivation.accent_strength,
-                lightness_compensation: derivation.lightness_compensation,
+                lightness_compensation: derivation
+                    .lightness_compensation
+                    .unwrap_or(default_lightness_compensation),
             },
         )
         .with_context(|| {

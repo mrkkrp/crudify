@@ -63,12 +63,15 @@ Each entry in `derivations` describes one output image.
 * `accent_strength` (optional, default `0.5`): How strongly the `saliency`
   strategy favors vivid and rare colors, in the range `0.0..=1.0`. Ignored
   by the `frequency` strategy.
-* `lightness_compensation` (optional, default `0.0`): How strongly to
-  de-emphasize lightness when clustering, in the range `0.0..=1.0`. At
-  `0.0` lightness counts fully; at `1.0` it is ignored, so colors are
-  separated purely by hue and chroma. This keeps dark but saturated hues
-  (such as blue) from being absorbed into large clusters of
-  mid-lightness colors. Ignored by the `frequency` strategy.
+* `lightness_compensation` (optional): How strongly to de-emphasize
+  lightness when clustering, in the range `0.0..=1.0`. At `0.0` lightness
+  counts fully; at `1.0` it is ignored, so colors are separated purely by
+  hue and chroma. This keeps dark but saturated hues (such as blue) from
+  being absorbed into large clusters of mid-lightness colors. When omitted,
+  the value is chosen automatically from the input image so that lightness
+  and hue/chroma contribute equally to clustering (in photographs, where
+  lightness varies much more than hue, this lands close to `1.0`). Set an
+  explicit value to override. Ignored by the `frequency` strategy.
 
 `width` and `height` must preserve the aspect ratio of the input image
 (within a small tolerance); otherwise the derivation is rejected. The

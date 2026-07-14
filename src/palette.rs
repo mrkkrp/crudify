@@ -116,6 +116,51 @@ pub fn build(
     }
 }
 
+/// The `lightness_compensation` value that makes lightness and hue/chroma
+/// contribute equally to OKLab clustering distance for `source`.
+///
+/// Clustering distance is `l_weight * dL^2 + da^2 + db^2` where `l_weight =
+/// 1 - lightness_compensation`. The expected contribution of the lightness term
+/// over the image is proportional to `l_weight * Var(L)`, and of the hue/chroma
+/// terms to `Var(a) + Var(b)`. Equating them gives
+/// `l_weight = (Var(a) + Var(b)) / Var(L)`, so
+/// `lightness_compensation = 1 - (Var(a) + Var(b)) / Var(L)`.
+///
+/// In photographs lightness varies far more than hue/chroma, so this is
+/// typically close to `1.0`. The result is clamped to `0.0..=1.0` (a flat-lit,
+/// very colorful image could otherwise ask to *amplify* lightness, which is not
+/// meaningful). A degenerate image with no lightness variation yields `0.0`.
+pub fn adaptive_lightness_compensation(source: &RgbImage) -> f64 {
+    let (mut sl, mut sa, mut sb) = (0.0f64, 0.0f64, 0.0f64);
+    let (mut sll, mut saa, mut sbb) = (0.0f64, 0.0f64, 0.0f64);
+    let mut n = 0.0f64;
+    for pixel in source.pixels() {
+        let c = Oklab::from_srgb(*pixel);
+        sl += c.l;
+        sa += c.a;
+        sb += c.b;
+        sll += c.l * c.l;
+        saa += c.a * c.a;
+        sbb += c.b * c.b;
+        n += 1.0;
+    }
+    if n == 0.0 {
+        return 0.0;
+    }
+    let var_l = (sll / n - (sl / n).powi(2)).max(0.0);
+    let var_a = (saa / n - (sa / n).powi(2)).max(0.0);
+    let var_b = (sbb / n - (sb / n).powi(2)).max(0.0);
+    // For an essentially uniform image no axis carries real information, so the
+    // weighting is undefined; fall back to the neutral value (lightness counts
+    // fully). The threshold is well above float accumulation noise but far
+    // below any real image's lightness spread.
+    const NEGLIGIBLE_VARIANCE: f64 = 1e-6;
+    if var_l <= NEGLIGIBLE_VARIANCE {
+        return 0.0;
+    }
+    (1.0 - (var_a + var_b) / var_l).clamp(0.0, 1.0)
+}
+
 /// Count occurrences of each distinct color in `source`.
 fn color_counts(source: &RgbImage) -> Vec<ColorCount> {
     let mut map: HashMap<[u8; 3], u64> = HashMap::new();
@@ -291,6 +336,37 @@ fn finish_oklab(colors: Vec<Rgb<u8>>, l_weight: f64) -> Palette {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn adaptive_compensation_is_high_when_lightness_dominates() {
+        // A grayscale ramp: lots of lightness variation, no hue/chroma. The
+        // hue/chroma variance is ~0, so compensation should be near 1.0.
+        let mut img = RgbImage::new(64, 64);
+        for (x, _y, p) in img.enumerate_pixels_mut() {
+            let v = (x * 4) as u8;
+            *p = Rgb([v, v, v]);
+        }
+        let lc = adaptive_lightness_compensation(&img);
+        assert!(lc > 0.9, "expected near 1.0, got {lc}");
+    }
+
+    #[test]
+    fn adaptive_compensation_is_zero_for_flat_image() {
+        // No variation at all: no lightness variance, so it returns 0.0.
+        let img = RgbImage::from_pixel(16, 16, Rgb([100, 120, 140]));
+        assert_eq!(adaptive_lightness_compensation(&img), 0.0);
+    }
+
+    #[test]
+    fn adaptive_compensation_is_in_unit_range() {
+        // A colorful, varied image must still yield a value within [0, 1].
+        let mut img = RgbImage::new(48, 48);
+        for (x, y, p) in img.enumerate_pixels_mut() {
+            *p = Rgb([(x * 5) as u8, (y * 5) as u8, ((x + y) * 3) as u8]);
+        }
+        let lc = adaptive_lightness_compensation(&img);
+        assert!((0.0..=1.0).contains(&lc), "out of range: {lc}");
+    }
 
     /// An image with a large gray background and a small vivid red accent.
     fn accent_image() -> RgbImage {

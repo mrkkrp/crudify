@@ -42,13 +42,17 @@ pub struct Derivation {
     #[serde(default = "default_accent_strength")]
     pub accent_strength: f64,
     /// How strongly to de-emphasize lightness when clustering in OKLab, in the
-    /// range `0.0..=1.0`. At `0.0` (the default) lightness counts fully; at
-    /// `1.0` it is ignored, so colors are separated purely by hue and chroma.
-    /// This keeps dark but saturated hues (such as blue) from being absorbed
-    /// into large clusters of mid-lightness colors. Ignored by the `frequency`
-    /// strategy.
+    /// range `0.0..=1.0`. At `0.0` lightness counts fully; at `1.0` it is
+    /// ignored, so colors are separated purely by hue and chroma. This keeps
+    /// dark but saturated hues (such as blue) from being absorbed into large
+    /// clusters of mid-lightness colors.
+    ///
+    /// When absent, a value is chosen automatically from the input image so
+    /// that lightness and hue/chroma contribute equally to clustering distance
+    /// (see [`crate::palette::adaptive_lightness_compensation`]). Set an
+    /// explicit value to override. Ignored by the `frequency` strategy.
     #[serde(default)]
-    pub lightness_compensation: f64,
+    pub lightness_compensation: Option<f64>,
 }
 
 /// The palette selection strategy for a derivation.
@@ -123,7 +127,7 @@ derivations:
         let d = &config.derivations[0];
         assert_eq!(d.palette_strategy, PaletteStrategy::Saliency);
         assert_eq!(d.accent_strength, default_accent_strength());
-        assert_eq!(d.lightness_compensation, 0.0);
+        assert_eq!(d.lightness_compensation, None);
     }
 
     #[test]
@@ -149,7 +153,7 @@ derivations:
             let d = &config.derivations[0];
             assert_eq!(d.palette_strategy, expected, "strategy {name}");
             assert_eq!(d.accent_strength, 0.7);
-            assert_eq!(d.lightness_compensation, 0.3);
+            assert_eq!(d.lightness_compensation, Some(0.3));
         }
     }
 
