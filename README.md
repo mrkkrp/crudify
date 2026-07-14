@@ -48,10 +48,10 @@ derivations:
 Each entry in `derivations` describes one output image.
 
 * `output` (required): Path to the output image, relative to the
-  configuration file. The format is chosen from the file extension. Note
-  that lossy formats such as JPEG may reintroduce colors on decode, so the
-  on-disk color count of a JPEG output is not guaranteed to respect
-  `palette_size`.
+  configuration file. Must have a `.png` extension. Output is restricted
+  to PNG because lossy formats such as JPEG reintroduce colors on decode,
+  which would defeat the palette reduction; a `.jpg`/`.jpeg` output is
+  rejected.
 * `width` (required): Target width.
 * `height` (required): Target height.
 * `palette_size` (required): Maximum number of distinct colors in the
