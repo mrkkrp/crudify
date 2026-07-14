@@ -58,7 +58,7 @@ Each entry in `derivations` describes one output image.
   output. This is an upper bound only: fewer colors may be used when the
   image does not contain that many, and it places no constraint on *which*
   colors are used.
-* `palette_strategy` (optional, default `frequency`): How the palette is
+* `palette_strategy` (optional, default `saliency`): How the palette is
   chosen. See [Palette strategies](#palette-strategies).
 * `accent_strength` (optional, default `0.5`): How strongly the `saliency`
   strategy favors vivid and rare colors, in the range `0.0..=1.0`. Ignored
@@ -84,10 +84,10 @@ palette selection toward perceptually important colors so that accents
 survive, clustering in the perceptual OKLab color space where distinct hues
 resist being merged.
 
-* `frequency`: Frequency-weighted clustering. The default; tends to average
-  away small vivid accents.
+* `frequency`: Frequency-weighted clustering. The original baseline; tends
+  to average away small vivid accents.
 * `saliency`: Reweights the histogram to favor vivid (`accent_strength`) and
-  rare colors, then clusters in OKLab.
+  rare colors, then clusters in OKLab. The default.
 
 ## License
 

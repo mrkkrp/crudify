@@ -32,8 +32,8 @@ pub struct Derivation {
     /// (already downscaled) image does not contain that many distinct colors.
     /// It places no constraint on *which* colors may be used.
     pub palette_size: u32,
-    /// How the palette is chosen. Defaults to [`PaletteStrategy::Frequency`],
-    /// which reproduces the original frequency-weighted behavior.
+    /// How the palette is chosen. Defaults to [`PaletteStrategy::Saliency`],
+    /// which favors vivid and rare colors so that accents survive.
     #[serde(default)]
     pub palette_strategy: PaletteStrategy,
     /// How strongly the [`Saliency`](PaletteStrategy::Saliency) strategy favors
@@ -61,10 +61,10 @@ pub struct Derivation {
 pub enum PaletteStrategy {
     /// Frequency-weighted clustering in exoquant's color space (the original
     /// behavior). The baseline; tends to average away small vivid accents.
-    #[default]
     Frequency,
     /// Reweight the histogram to favor vivid and rare colors, then cluster in
-    /// OKLab.
+    /// OKLab. The default.
+    #[default]
     Saliency,
 }
 
@@ -121,7 +121,7 @@ derivations:
 ";
         let config: Config = serde_yaml::from_str(yaml).unwrap();
         let d = &config.derivations[0];
-        assert_eq!(d.palette_strategy, PaletteStrategy::Frequency);
+        assert_eq!(d.palette_strategy, PaletteStrategy::Saliency);
         assert_eq!(d.accent_strength, default_accent_strength());
         assert_eq!(d.lightness_compensation, 0.0);
     }
