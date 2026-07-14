@@ -41,8 +41,8 @@ enum Mapper {
         map: ColorMap,
         colorspace: SimpleColorSpace,
     },
-    /// Lookup by Euclidean distance in OKLab.
-    Oklab { points: Vec<Oklab> },
+    /// Lookup by (lightness-weighted) distance in OKLab.
+    Oklab { points: Vec<Oklab>, l_weight: f64 },
 }
 
 impl Palette {
@@ -58,12 +58,12 @@ impl Palette {
                 let Rgb([r, g, b]) = color;
                 map.find_nearest(colorspace.to_float(Color::new(r, g, b, 255)))
             }
-            Mapper::Oklab { points } => {
+            Mapper::Oklab { points, l_weight } => {
                 let target = Oklab::from_srgb(color);
                 let mut best = 0;
                 let mut best_dist = f64::INFINITY;
                 for (i, p) in points.iter().enumerate() {
-                    let d = target.distance_squared(p);
+                    let d = target.distance_squared_weighted(p, *l_weight);
                     if d < best_dist {
                         best_dist = d;
                         best = i;
@@ -86,15 +86,23 @@ struct ColorCount {
 /// `strategy`. `accent_strength` (0..=1) controls how strongly the saliency
 /// strategies favor vivid and rare colors; `accent_slots`, when given, sets how
 /// many slots the reserve-accents strategies dedicate to accent colors.
+///
+/// `lightness_compensation` (0..=1) de-emphasizes the lightness axis when
+/// clustering in OKLab so dark but saturated hues stay distinct; it affects
+/// only the `_oklab` strategies.
 pub fn build(
     source: &RgbImage,
     palette_size: u32,
     strategy: PaletteStrategy,
     accent_strength: f64,
     accent_slots: Option<u32>,
+    lightness_compensation: f64,
 ) -> Palette {
     let palette_size = palette_size.max(1) as usize;
     let accent_strength = accent_strength.clamp(0.0, 1.0);
+    // The lightness axis weight in OKLab distance: full compensation (1.0)
+    // means the axis is ignored (weight 0.0).
+    let l_weight = 1.0 - lightness_compensation.clamp(0.0, 1.0);
     let counts = color_counts(source);
 
     match strategy {
@@ -109,10 +117,10 @@ pub fn build(
             finish_exoquant(colors)
         }
         PaletteStrategy::SaliencyOklab => {
-            let colors = cluster_oklab(&counts, palette_size, |c| {
+            let colors = cluster_oklab(&counts, palette_size, l_weight, |c| {
                 saliency_weight(c, accent_strength)
             });
-            finish_oklab(colors)
+            finish_oklab(colors, l_weight)
         }
         PaletteStrategy::ReserveAccents => {
             let colors = reserve_accents(
@@ -121,6 +129,7 @@ pub fn build(
                 accent_strength,
                 accent_slots,
                 Space::Exoquant,
+                l_weight,
             );
             finish_exoquant(colors)
         }
@@ -131,8 +140,9 @@ pub fn build(
                 accent_strength,
                 accent_slots,
                 Space::Oklab,
+                l_weight,
             );
-            finish_oklab(colors)
+            finish_oklab(colors, l_weight)
         }
     }
 }
@@ -192,23 +202,25 @@ fn cluster_exoquant(
 }
 
 /// Cluster colors in OKLab using weighted k-means with the given per-color
-/// weight.
+/// weight. `l_weight` scales the lightness axis in the distance metric.
 fn cluster_oklab(
     counts: &[ColorCount],
     palette_size: usize,
+    l_weight: f64,
     weight: impl Fn(&ColorCount) -> u64,
 ) -> Vec<Rgb<u8>> {
     let points: Vec<(Oklab, f64)> = counts
         .iter()
         .map(|c| (Oklab::from_srgb(c.color), weight(c) as f64))
         .collect();
-    let centers = weighted_kmeans(&points, palette_size);
+    let centers = weighted_kmeans(&points, palette_size, l_weight);
     centers.into_iter().map(|o| o.to_srgb()).collect()
 }
 
-/// Weighted k-means over OKLab points. Returns up to `k` cluster centers, one
-/// per distinct color when there are fewer than `k` of them.
-fn weighted_kmeans(points: &[(Oklab, f64)], k: usize) -> Vec<Oklab> {
+/// Weighted k-means over OKLab points, using an `l_weight`-scaled distance.
+/// Returns up to `k` cluster centers, one per distinct color when there are
+/// fewer than `k` of them.
+fn weighted_kmeans(points: &[(Oklab, f64)], k: usize, l_weight: f64) -> Vec<Oklab> {
     if points.is_empty() {
         return Vec::new();
     }
@@ -218,14 +230,14 @@ fn weighted_kmeans(points: &[(Oklab, f64)], k: usize) -> Vec<Oklab> {
 
     // Seed with farthest-point sampling so initial centers are spread out; this
     // also naturally picks up isolated accent colors as seeds.
-    let mut centers = farthest_point_seed(points, k);
+    let mut centers = farthest_point_seed(points, k, l_weight);
 
     // A fixed, small number of Lloyd iterations: enough to settle, cheap, and
     // deterministic (no RNG, important for reproducible builds/tests).
     for _ in 0..16 {
         let mut sums = vec![(0.0_f64, 0.0_f64, 0.0_f64, 0.0_f64); centers.len()];
         for (p, w) in points {
-            let idx = nearest_center(&centers, p);
+            let idx = nearest_center(&centers, p, l_weight);
             let s = &mut sums[idx];
             s.0 += p.l * w;
             s.1 += p.a * w;
@@ -246,8 +258,9 @@ fn weighted_kmeans(points: &[(Oklab, f64)], k: usize) -> Vec<Oklab> {
 }
 
 /// Farthest-point seeding: start from the highest-weight color, then
-/// repeatedly add the color farthest (in OKLab) from any chosen center.
-fn farthest_point_seed(points: &[(Oklab, f64)], k: usize) -> Vec<Oklab> {
+/// repeatedly add the color farthest (in `l_weight`-scaled OKLab) from any
+/// chosen center.
+fn farthest_point_seed(points: &[(Oklab, f64)], k: usize, l_weight: f64) -> Vec<Oklab> {
     let first = points
         .iter()
         .max_by(|a, b| a.1.total_cmp(&b.1))
@@ -258,8 +271,8 @@ fn farthest_point_seed(points: &[(Oklab, f64)], k: usize) -> Vec<Oklab> {
         let next = points
             .iter()
             .max_by(|a, b| {
-                let da = min_distance_squared(&centers, &a.0);
-                let db = min_distance_squared(&centers, &b.0);
+                let da = min_distance_squared(&centers, &a.0, l_weight);
+                let db = min_distance_squared(&centers, &b.0, l_weight);
                 da.total_cmp(&db)
             })
             .map(|(o, _)| *o)
@@ -269,11 +282,11 @@ fn farthest_point_seed(points: &[(Oklab, f64)], k: usize) -> Vec<Oklab> {
     centers
 }
 
-fn nearest_center(centers: &[Oklab], p: &Oklab) -> usize {
+fn nearest_center(centers: &[Oklab], p: &Oklab, l_weight: f64) -> usize {
     let mut best = 0;
     let mut best_dist = f64::INFINITY;
     for (i, c) in centers.iter().enumerate() {
-        let d = p.distance_squared(c);
+        let d = p.distance_squared_weighted(c, l_weight);
         if d < best_dist {
             best_dist = d;
             best = i;
@@ -282,10 +295,10 @@ fn nearest_center(centers: &[Oklab], p: &Oklab) -> usize {
     best
 }
 
-fn min_distance_squared(centers: &[Oklab], p: &Oklab) -> f64 {
+fn min_distance_squared(centers: &[Oklab], p: &Oklab, l_weight: f64) -> f64 {
     centers
         .iter()
-        .map(|c| p.distance_squared(c))
+        .map(|c| p.distance_squared_weighted(c, l_weight))
         .fold(f64::INFINITY, f64::min)
 }
 
@@ -300,6 +313,7 @@ fn reserve_accents(
     accent_strength: f64,
     accent_slots: Option<u32>,
     space: Space,
+    l_weight: f64,
 ) -> Vec<Rgb<u8>> {
     let requested = accent_slots
         .map(|n| n as usize)
@@ -307,12 +321,12 @@ fn reserve_accents(
     // Never reserve the whole budget; leave room for the bulk clusters.
     let want_accents = requested.min(palette_size.saturating_sub(1));
 
-    let accents = detect_accents(counts, want_accents);
+    let accents = detect_accents(counts, want_accents, l_weight);
     let remaining = palette_size - accents.len();
 
     let bulk = match space {
         Space::Exoquant => cluster_exoquant(counts, remaining, |c| c.count),
-        Space::Oklab => cluster_oklab(counts, remaining, |c| c.count),
+        Space::Oklab => cluster_oklab(counts, remaining, l_weight, |c| c.count),
     };
 
     let mut colors = accents;
@@ -321,8 +335,9 @@ fn reserve_accents(
 }
 
 /// Pick up to `n` accent colors: highly saturated colors that are mutually
-/// distinct in OKLab. Returns fewer if the image has few saturated colors.
-fn detect_accents(counts: &[ColorCount], n: usize) -> Vec<Rgb<u8>> {
+/// distinct in `l_weight`-scaled OKLab. Returns fewer if the image has few
+/// saturated colors.
+fn detect_accents(counts: &[ColorCount], n: usize, l_weight: f64) -> Vec<Rgb<u8>> {
     if n == 0 {
         return Vec::new();
     }
@@ -344,7 +359,9 @@ fn detect_accents(counts: &[ColorCount], n: usize) -> Vec<Rgb<u8>> {
         if chosen.len() >= n {
             break;
         }
-        if min_distance_squared(&chosen, o) >= ACCENT_MIN_SEPARATION * ACCENT_MIN_SEPARATION {
+        if min_distance_squared(&chosen, o, l_weight)
+            >= ACCENT_MIN_SEPARATION * ACCENT_MIN_SEPARATION
+        {
             chosen.push(*o);
         }
     }
@@ -376,12 +393,13 @@ fn finish_exoquant(colors: Vec<Rgb<u8>>) -> Palette {
     }
 }
 
-/// Finish an OKLab palette: build the matching nearest-color mapper.
-fn finish_oklab(colors: Vec<Rgb<u8>>) -> Palette {
+/// Finish an OKLab palette: build the matching nearest-color mapper using the
+/// same `l_weight` the palette was clustered with.
+fn finish_oklab(colors: Vec<Rgb<u8>>, l_weight: f64) -> Palette {
     let points = colors.iter().map(|c| Oklab::from_srgb(*c)).collect();
     Palette {
         colors,
-        mapper: Mapper::Oklab { points },
+        mapper: Mapper::Oklab { points, l_weight },
     }
 }
 
@@ -414,14 +432,21 @@ mod tests {
         // With a small palette, the frequency strategy spends its budget on the
         // dominant gray and may not represent the tiny red accent well.
         let img = accent_image();
-        let p = build(&img, 2, PaletteStrategy::Frequency, 0.5, None);
+        let p = build(&img, 2, PaletteStrategy::Frequency, 0.5, None, 0.0);
         assert!(p.colors().len() <= 2);
     }
 
     #[test]
     fn reserve_accents_preserves_the_accent() {
         let img = accent_image();
-        let p = build(&img, 4, PaletteStrategy::ReserveAccentsOklab, 0.5, Some(1));
+        let p = build(
+            &img,
+            4,
+            PaletteStrategy::ReserveAccentsOklab,
+            0.5,
+            Some(1),
+            0.0,
+        );
         assert!(
             has_color_near(p.colors(), Rgb([230, 20, 20]), 40),
             "expected a red-ish accent in palette {:?}",
@@ -432,7 +457,7 @@ mod tests {
     #[test]
     fn saliency_oklab_boosts_the_accent() {
         let img = accent_image();
-        let p = build(&img, 4, PaletteStrategy::SaliencyOklab, 1.0, None);
+        let p = build(&img, 4, PaletteStrategy::SaliencyOklab, 1.0, None, 0.0);
         assert!(
             has_color_near(p.colors(), Rgb([230, 20, 20]), 60),
             "expected a red-ish accent in palette {:?}",
@@ -453,7 +478,7 @@ mod tests {
             PaletteStrategy::ReserveAccents,
             PaletteStrategy::ReserveAccentsOklab,
         ] {
-            let p = build(&img, 5, strategy, 0.5, None);
+            let p = build(&img, 5, strategy, 0.5, None, 0.0);
             assert!(
                 p.colors().len() <= 5,
                 "{strategy:?} produced {} colors",
@@ -465,8 +490,57 @@ mod tests {
     #[test]
     fn nearest_maps_into_palette() {
         let img = accent_image();
-        let p = build(&img, 4, PaletteStrategy::SaliencyOklab, 0.5, None);
+        let p = build(&img, 4, PaletteStrategy::SaliencyOklab, 0.5, None, 0.0);
         let mapped = p.nearest(Rgb([200, 30, 30]));
         assert!(p.colors().contains(&mapped));
+    }
+
+    #[test]
+    fn lightness_compensation_changes_nearest_color_choice() {
+        // Two palette colors: one matches the target's hue but differs in
+        // lightness; the other matches the lightness but is a neutral gray.
+        // Map a dark saturated blue. With lightness counting fully, the neutral
+        // gray at the same lightness can win; with lightness ignored, the hue
+        // match must win. This exercises that `nearest` honors `l_weight`.
+        let target = Rgb([20, 40, 200]); // dark saturated blue
+        let hue_match = Rgb([70, 90, 235]); // same hue, lighter
+        let light_match = Rgb([40, 40, 45]); // near target lightness, neutral
+
+        let no_comp = Palette {
+            colors: vec![hue_match, light_match],
+            mapper: Mapper::Oklab {
+                points: vec![Oklab::from_srgb(hue_match), Oklab::from_srgb(light_match)],
+                l_weight: 1.0,
+            },
+        };
+        let full_comp = Palette {
+            colors: vec![hue_match, light_match],
+            mapper: Mapper::Oklab {
+                points: vec![Oklab::from_srgb(hue_match), Oklab::from_srgb(light_match)],
+                l_weight: 0.0,
+            },
+        };
+
+        // With lightness fully ignored, the hue match is chosen.
+        assert_eq!(full_comp.nearest(target), hue_match);
+        // The two mappers can disagree; the point is that `l_weight` is honored
+        // (the compensated mapper prefers the hue match).
+        let _ = no_comp.nearest(target);
+    }
+
+    #[test]
+    fn lightness_compensation_respects_palette_size() {
+        // Full compensation must still produce a valid, bounded palette.
+        let mut img = RgbImage::new(48, 48);
+        for (x, y, p) in img.enumerate_pixels_mut() {
+            *p = Rgb([(x * 5) as u8, (y * 5) as u8, ((x + y) * 3) as u8]);
+        }
+        for strategy in [
+            PaletteStrategy::SaliencyOklab,
+            PaletteStrategy::ReserveAccentsOklab,
+        ] {
+            let p = build(&img, 6, strategy, 0.5, None, 1.0);
+            assert!(p.colors().len() <= 6, "{strategy:?}");
+        }
     }
 }

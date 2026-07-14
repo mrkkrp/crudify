@@ -72,12 +72,18 @@ impl Oklab {
         }
     }
 
-    /// Squared Euclidean distance to another color in OKLab.
-    pub fn distance_squared(self, other: &Oklab) -> f64 {
+    /// Squared OKLab distance with the lightness axis scaled by `l_weight`.
+    ///
+    /// With `l_weight == 1.0` this is the plain Euclidean distance. Lowering it
+    /// de-emphasizes lightness so colors are separated more by hue and chroma;
+    /// at `l_weight == 0.0` lightness is ignored entirely, which keeps dark but
+    /// saturated hues (such as blue) from being absorbed into large clusters of
+    /// mid-lightness colors.
+    pub fn distance_squared_weighted(self, other: &Oklab, l_weight: f64) -> f64 {
         let dl = self.l - other.l;
         let da = self.a - other.a;
         let db = self.b - other.b;
-        dl * dl + da * da + db * db
+        l_weight * dl * dl + da * da + db * db
     }
 }
 
@@ -132,5 +138,46 @@ mod tests {
         let red = Oklab::from_srgb(Rgb([230, 20, 20]));
         assert!(red.chroma_ratio() > gray.chroma_ratio());
         assert!(gray.chroma_ratio() < 0.02);
+    }
+
+    #[test]
+    fn lightness_weight_scales_the_lightness_axis() {
+        // Two colors that differ only in lightness.
+        let a = Oklab {
+            l: 0.3,
+            a: 0.1,
+            b: 0.1,
+        };
+        let b = Oklab {
+            l: 0.7,
+            a: 0.1,
+            b: 0.1,
+        };
+        // Full weight sees the lightness difference; zero weight sees none.
+        assert!(a.distance_squared_weighted(&b, 1.0) > 0.0);
+        assert_eq!(a.distance_squared_weighted(&b, 0.0), 0.0);
+        // Halving the weight halves the (purely lightness) squared distance.
+        let full = a.distance_squared_weighted(&b, 1.0);
+        let half = a.distance_squared_weighted(&b, 0.5);
+        assert!((half - full / 2.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn lightness_weight_leaves_hue_distance_untouched() {
+        // Colors that differ only in the a/b (hue/chroma) axes: the weight on
+        // lightness must not change their distance.
+        let a = Oklab {
+            l: 0.5,
+            a: 0.2,
+            b: -0.1,
+        };
+        let b = Oklab {
+            l: 0.5,
+            a: -0.1,
+            b: 0.2,
+        };
+        let full = a.distance_squared_weighted(&b, 1.0);
+        let none = a.distance_squared_weighted(&b, 0.0);
+        assert!((full - none).abs() < 1e-12);
     }
 }

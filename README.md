@@ -67,6 +67,12 @@ Each entry in `derivations` describes one output image.
   slots reserved for detected accent colors. Used only by the
   `reserve_accents` strategies. When absent, a strategy-chosen number is
   used.
+* `lightness_compensation` (optional, default `0.0`): How strongly to
+  de-emphasize lightness when clustering, in the range `0.0..=1.0`. At
+  `0.0` lightness counts fully; at `1.0` it is ignored, so colors are
+  separated purely by hue and chroma. This keeps dark but saturated hues
+  (such as blue) from being absorbed into large clusters of
+  mid-lightness colors. Affects only the `_oklab` strategies.
 
 `width` and `height` must preserve the aspect ratio of the input image
 (within a small tolerance); otherwise the derivation is rejected. The

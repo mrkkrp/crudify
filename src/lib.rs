@@ -48,6 +48,7 @@ pub fn run(config_path: impl AsRef<Path>) -> Result<()> {
                 strategy: derivation.palette_strategy,
                 accent_strength: derivation.accent_strength,
                 accent_slots: derivation.accent_slots,
+                lightness_compensation: derivation.lightness_compensation,
             },
         )
         .with_context(|| {

@@ -33,6 +33,9 @@ pub struct PaletteOptions {
     pub accent_strength: f64,
     /// Reserved accent slots for the reserve-accents strategies.
     pub accent_slots: Option<u32>,
+    /// Lightness de-emphasis for OKLab clustering (`0..=1`); see
+    /// [`crate::config::Derivation::lightness_compensation`].
+    pub lightness_compensation: f64,
 }
 
 /// Produce a `width`x`height` image using at most `palette_size` distinct
@@ -62,6 +65,7 @@ pub fn pixelate(
         options.strategy,
         options.accent_strength,
         options.accent_slots,
+        options.lightness_compensation,
     );
 
     // (2) Downsample: each output cell averages the source pixels that map into
@@ -127,6 +131,7 @@ mod tests {
             strategy: PaletteStrategy::Frequency,
             accent_strength: 0.5,
             accent_slots: None,
+            lightness_compensation: 0.0,
         }
     }
 
