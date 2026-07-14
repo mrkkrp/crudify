@@ -19,7 +19,8 @@
       "Bash(curl -sS -A \"crudify-dev\" \"https://crates.io/api/v1/crates/image\")",
       "Read(//tmp/**)",
       "Bash(curl -sSL -A \"crudify-dev\" \"https://docs.rs/crate/exoquant/0.2.0/source/src/lib.rs\")",
-      "Bash(echo \"===EXIT $?===\")"
+      "Bash(echo \"===EXIT $?===\")",
+      "Bash(git checkout *)"
     ]
   }
 }
