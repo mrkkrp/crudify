@@ -15,8 +15,10 @@ pub mod pixelate;
 use std::path::Path;
 
 use anyhow::{Context, Result};
+use image::RgbImage;
+use rayon::prelude::*;
 
-use crate::config::Config;
+use crate::config::{Config, Derivation};
 
 /// Run crudify against the configuration file at `config_path`.
 ///
@@ -43,55 +45,75 @@ pub fn run(config_path: impl AsRef<Path>) -> Result<()> {
     // derivation may override it with an explicit value.
     let default_lightness_compensation = palette::adaptive_lightness_compensation(&source);
 
+    // Derivations are independent: each builds its own palette and downsamples
+    // from the shared, immutable source, then writes a distinct output file. We
+    // process them in parallel across cores. Palette selection is deterministic
+    // (fixed-seed k-means, no RNG), so the results are identical regardless of
+    // scheduling. `try_for_each` reports the first error and drops the rest.
+    config.derivations.par_iter().try_for_each(|derivation| {
+        process_derivation(
+            derivation,
+            &source,
+            input_dims,
+            default_lightness_compensation,
+            base_dir,
+        )
+    })
+}
+
+/// Produce and write the single output image described by `derivation`.
+fn process_derivation(
+    derivation: &Derivation,
+    source: &RgbImage,
+    input_dims: (u32, u32),
+    default_lightness_compensation: f64,
+    base_dir: &Path,
+) -> Result<()> {
     let (input_width, input_height) = input_dims;
 
-    for derivation in &config.derivations {
-        // The user specifies only the shorter output dimension; the longer one
-        // is scaled from it to preserve the input's aspect ratio. Rounding is
-        // done so the derived dimension is never smaller than `short_side`.
-        let (width, height) = if input_width <= input_height {
-            let height = scale_dimension(derivation.short_side, input_height, input_width);
-            (derivation.short_side, height)
-        } else {
-            let width = scale_dimension(derivation.short_side, input_width, input_height);
-            (width, derivation.short_side)
-        };
+    // The user specifies only the shorter output dimension; the longer one is
+    // scaled from it to preserve the input's aspect ratio. Rounding is done so
+    // the derived dimension is never smaller than `short_side`.
+    let (width, height) = if input_width <= input_height {
+        let height = scale_dimension(derivation.short_side, input_height, input_width);
+        (derivation.short_side, height)
+    } else {
+        let width = scale_dimension(derivation.short_side, input_width, input_height);
+        (width, derivation.short_side)
+    };
 
-        let pixelated = pixelate::pixelate(
-            &source,
-            width,
-            height,
-            derivation.palette_size,
-            pixelate::PaletteOptions {
-                strategy: derivation.palette_strategy,
-                accent_strength: derivation.accent_strength,
-                lightness_compensation: derivation
-                    .lightness_compensation
-                    .unwrap_or(default_lightness_compensation),
-            },
+    let pixelated = pixelate::pixelate(
+        source,
+        width,
+        height,
+        derivation.palette_size,
+        pixelate::PaletteOptions {
+            strategy: derivation.palette_strategy,
+            accent_strength: derivation.accent_strength,
+            lightness_compensation: derivation
+                .lightness_compensation
+                .unwrap_or(default_lightness_compensation),
+        },
+    )
+    .with_context(|| {
+        format!(
+            "failed to process derivation for output {}",
+            derivation.output.display()
         )
-        .with_context(|| {
-            format!(
-                "failed to process derivation for output {}",
-                derivation.output.display()
-            )
-        })?;
+    })?;
 
-        // Upscale back to approximately the input resolution and overlay the
-        // painting grid.
-        let output = grid::render(&pixelated, input_dims).with_context(|| {
-            format!(
-                "failed to render grid for output {}",
-                derivation.output.display()
-            )
-        })?;
+    // Upscale back to approximately the input resolution and overlay the
+    // painting grid.
+    let output = grid::render(&pixelated, input_dims).with_context(|| {
+        format!(
+            "failed to render grid for output {}",
+            derivation.output.display()
+        )
+    })?;
 
-        let output_path = base_dir.join(&derivation.output);
-        image_io::save(&output, &output_path)
-            .with_context(|| format!("failed to write output image {}", output_path.display()))?;
-    }
-
-    Ok(())
+    let output_path = base_dir.join(&derivation.output);
+    image_io::save(&output, &output_path)
+        .with_context(|| format!("failed to write output image {}", output_path.display()))
 }
 
 /// Scale `short_side` by the input aspect ratio `long / short` to obtain the

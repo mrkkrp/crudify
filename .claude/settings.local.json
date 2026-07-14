@@ -25,7 +25,10 @@
       "Bash(cargo clippy *)",
       "Bash(cargo build *)",
       "Bash(cargo run *)",
-      "Bash(echo \"exit=$?\")"
+      "Bash(echo \"exit=$?\")",
+      "Bash(time ./target/release/crudify street.yaml)",
+      "Bash(time ./target/release/crudify street.yaml landscape.yaml)",
+      "Bash(./target/release/crudify street.yaml landscape.yaml)"
     ]
   }
 }
