@@ -29,6 +29,11 @@ const THIN_WIDTH: u32 = 1;
 const MEDIUM_WIDTH: u32 = 2;
 const THICK_WIDTH: u32 = 3;
 
+/// The largest number of original pixels, in either dimension, for which the
+/// thin inter-pixel grid lines are still drawn. Beyond this the fine grid is
+/// omitted (the coarser dividers remain).
+const MAX_FINE_GRID_DIM: u32 = 100;
+
 /// Maximum relative deviation allowed between the input aspect ratio and the
 /// target `width:height` aspect ratio.
 const ASPECT_TOLERANCE: f64 = 0.01;
@@ -52,10 +57,15 @@ pub fn render(pixelated: &RgbImage, input_dims: (u32, u32)) -> Result<RgbImage> 
     check_aspect_ratio(in_w, in_h, grid_w, grid_h)?;
     let cell = cell_size(in_w, in_h, grid_w, grid_h);
 
+    // With many original pixels, a 1px line between every pair would drown the
+    // image in grid, so the finest (inter-pixel) lines are dropped past a
+    // threshold; the coarser half/quarter dividers are always kept.
+    let fine_grid = grid_w <= MAX_FINE_GRID_DIM && grid_h <= MAX_FINE_GRID_DIM;
+
     // Precompute the line thickness at each interior boundary. Boundary `i`
     // (for i in 1..grid_dim) sits between original pixels i-1 and i.
-    let x_lines = boundary_widths(grid_w);
-    let y_lines = boundary_widths(grid_h);
+    let x_lines = boundary_widths(grid_w, fine_grid);
+    let y_lines = boundary_widths(grid_h, fine_grid);
 
     // The total size is the blocks plus every line's pixels laid between them.
     let out_w = grid_w * cell + x_lines.iter().sum::<u32>();
@@ -113,7 +123,10 @@ fn cell_size(in_w: u32, in_h: u32, grid_w: u32, grid_h: u32) -> u32 {
 /// boundary between original pixels `i` and `i + 1`. The half boundary is
 /// thickest, the quarter boundaries medium, all others thin. A coarser level
 /// wins where boundaries coincide.
-fn boundary_widths(dim: u32) -> Vec<u32> {
+///
+/// When `fine_grid` is false, the thin inter-pixel lines are omitted (width
+/// `0`); only the half and quarter dividers remain.
+fn boundary_widths(dim: u32, fine_grid: bool) -> Vec<u32> {
     if dim < 2 {
         return Vec::new();
     }
@@ -129,8 +142,10 @@ fn boundary_widths(dim: u32) -> Vec<u32> {
                 THICK_WIDTH
             } else if i == quarter || i == three_quarter {
                 MEDIUM_WIDTH
-            } else {
+            } else if fine_grid {
                 THIN_WIDTH
+            } else {
+                0
             }
         })
         .collect()
@@ -218,11 +233,49 @@ mod tests {
     #[test]
     fn boundary_widths_marks_half_and_quarters() {
         // dim=8: half at 4 (thick), quarter at 2, three_quarter at 6 (medium).
-        let w = boundary_widths(8);
+        let w = boundary_widths(8, true);
         assert_eq!(w.len(), 7);
         assert_eq!(w[3], THICK_WIDTH); // boundary index 3 == position 4
         assert_eq!(w[1], MEDIUM_WIDTH); // position 2
         assert_eq!(w[5], MEDIUM_WIDTH); // position 6
         assert_eq!(w[0], THIN_WIDTH);
+    }
+
+    #[test]
+    fn coarse_grid_omits_thin_lines_but_keeps_dividers() {
+        // Without the fine grid, thin boundaries are 0 while the half and
+        // quarter dividers still carry their thickness.
+        let w = boundary_widths(8, false);
+        assert_eq!(w.len(), 7);
+        assert_eq!(w[3], THICK_WIDTH); // half divider kept
+        assert_eq!(w[1], MEDIUM_WIDTH); // quarter divider kept
+        assert_eq!(w[5], MEDIUM_WIDTH); // three-quarter divider kept
+        assert_eq!(w[0], 0); // thin inter-pixel line dropped
+        assert_eq!(w[2], 0);
+    }
+
+    #[test]
+    fn fine_grid_dropped_past_threshold() {
+        // A grid larger than the threshold in one dimension must not draw thin
+        // lines. Build a 101x76 grid (~4:3) against a matching input; count the
+        // thin boundaries that survive: only the dividers should remain.
+        let px = solid(101, 76, Rgb([5, 5, 5]));
+        let out = render(&px, (101, 76)).unwrap();
+        // cell = 1, so output width = 101*1 + sum(x_lines). If the fine grid
+        // were on, x_lines would sum to ~100+; with it off, only 3 dividers
+        // per axis (quarter+half+three_quarter) contribute.
+        let expected_x_lines = MEDIUM_WIDTH + THICK_WIDTH + MEDIUM_WIDTH;
+        assert_eq!(out.dimensions().0, 101 + expected_x_lines);
+    }
+
+    #[test]
+    fn fine_grid_kept_at_threshold() {
+        // Exactly at the threshold (100) the fine grid is still drawn.
+        let px = solid(100, 75, Rgb([5, 5, 5])); // 4:3
+        let out = render(&px, (100, 75)).unwrap();
+        // With the fine grid on, there are far more than the 3 divider lines,
+        // so the output width exceeds 100 + the divider-only total.
+        let dividers_only = 100 + MEDIUM_WIDTH + THICK_WIDTH + MEDIUM_WIDTH;
+        assert!(out.dimensions().0 > dividers_only);
     }
 }
