@@ -50,31 +50,30 @@ pub struct Derivation {
     /// range `0.0..=1.0`. At `0.0` (the default) lightness counts fully; at
     /// `1.0` it is ignored, so colors are separated purely by hue and chroma.
     /// This keeps dark but saturated hues (such as blue) from being absorbed
-    /// into large clusters of mid-lightness colors. Affects only the `_oklab`
-    /// strategies.
+    /// into large clusters of mid-lightness colors. Ignored by the `frequency`
+    /// strategy.
     #[serde(default)]
     pub lightness_compensation: f64,
 }
 
 /// The palette selection strategy for a derivation.
+///
+/// Apart from [`Frequency`](Self::Frequency), the strategies cluster in the
+/// perceptual OKLab color space, where distances match human vision and
+/// distinct hues resist being merged.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PaletteStrategy {
     /// Frequency-weighted clustering in exoquant's color space (the original
-    /// behavior). Tends to average away small vivid accents.
+    /// behavior). The baseline; tends to average away small vivid accents.
     #[default]
     Frequency,
     /// Reweight the histogram to favor vivid and rare colors, then cluster in
-    /// exoquant's color space.
+    /// OKLab.
     Saliency,
-    /// Like [`Saliency`](Self::Saliency), but cluster in the perceptual OKLab
-    /// space so distinct hues resist being merged.
-    SaliencyOklab,
     /// Reserve slots for detected accent colors, then cluster the remainder in
-    /// exoquant's color space.
+    /// OKLab.
     ReserveAccents,
-    /// Like [`ReserveAccents`](Self::ReserveAccents), but cluster in OKLab.
-    ReserveAccentsOklab,
 }
 
 /// The default value for [`Derivation::accent_strength`].
@@ -141,12 +140,7 @@ derivations:
         for (name, expected) in [
             ("frequency", PaletteStrategy::Frequency),
             ("saliency", PaletteStrategy::Saliency),
-            ("saliency_oklab", PaletteStrategy::SaliencyOklab),
             ("reserve_accents", PaletteStrategy::ReserveAccents),
-            (
-                "reserve_accents_oklab",
-                PaletteStrategy::ReserveAccentsOklab,
-            ),
         ] {
             let yaml = format!(
                 "
@@ -170,7 +164,7 @@ derivations:
     }
 
     #[test]
-    fn rejects_kebab_case_palette_strategy() {
+    fn rejects_unknown_palette_strategy() {
         let yaml = "
 input: photo.png
 derivations:
@@ -178,7 +172,7 @@ derivations:
     width: 64
     height: 48
     palette_size: 16
-    palette_strategy: saliency-oklab
+    palette_strategy: reserve-accents
 ";
         assert!(serde_yaml::from_str::<Config>(yaml).is_err());
     }

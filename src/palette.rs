@@ -6,13 +6,15 @@
 //! selection toward perceptually important colors so accents survive:
 //!
 //! * [`PaletteStrategy::Frequency`] — the original behavior, no bias.
-//! * `Saliency*` — reweight colors by vividness and rarity before clustering.
-//! * `ReserveAccents*` — detect standout accent colors and reserve palette
-//!   slots for them, clustering the remaining budget for everything else.
+//! * [`PaletteStrategy::Saliency`] — reweight colors by vividness and rarity
+//!   before clustering.
+//! * [`PaletteStrategy::ReserveAccents`] — detect standout accent colors and
+//!   reserve palette slots for them, clustering the remaining budget for
+//!   everything else.
 //!
-//! Each strategy can cluster either in exoquant's color space or in the
-//! perceptual OKLab space, where distances match human vision and distinct hues
-//! resist being merged.
+//! Apart from `Frequency`, the strategies cluster in the perceptual OKLab
+//! space, where distances match human vision and distinct hues resist being
+//! merged.
 
 use std::collections::HashMap;
 
@@ -111,12 +113,6 @@ pub fn build(
             finish_exoquant(colors)
         }
         PaletteStrategy::Saliency => {
-            let colors = cluster_exoquant(&counts, palette_size, |c| {
-                saliency_weight(c, accent_strength)
-            });
-            finish_exoquant(colors)
-        }
-        PaletteStrategy::SaliencyOklab => {
             let colors = cluster_oklab(&counts, palette_size, l_weight, |c| {
                 saliency_weight(c, accent_strength)
             });
@@ -128,30 +124,11 @@ pub fn build(
                 palette_size,
                 accent_strength,
                 accent_slots,
-                Space::Exoquant,
-                l_weight,
-            );
-            finish_exoquant(colors)
-        }
-        PaletteStrategy::ReserveAccentsOklab => {
-            let colors = reserve_accents(
-                &counts,
-                palette_size,
-                accent_strength,
-                accent_slots,
-                Space::Oklab,
                 l_weight,
             );
             finish_oklab(colors, l_weight)
         }
     }
-}
-
-/// Which color space a set of palette colors was chosen in, so we can build a
-/// matching [`Mapper`].
-enum Space {
-    Exoquant,
-    Oklab,
 }
 
 /// Count occurrences of each distinct color in `source`.
@@ -312,7 +289,6 @@ fn reserve_accents(
     palette_size: usize,
     accent_strength: f64,
     accent_slots: Option<u32>,
-    space: Space,
     l_weight: f64,
 ) -> Vec<Rgb<u8>> {
     let requested = accent_slots
@@ -324,10 +300,7 @@ fn reserve_accents(
     let accents = detect_accents(counts, want_accents, l_weight);
     let remaining = palette_size - accents.len();
 
-    let bulk = match space {
-        Space::Exoquant => cluster_exoquant(counts, remaining, |c| c.count),
-        Space::Oklab => cluster_oklab(counts, remaining, l_weight, |c| c.count),
-    };
+    let bulk = cluster_oklab(counts, remaining, l_weight, |c| c.count);
 
     let mut colors = accents;
     colors.extend(bulk);
@@ -439,14 +412,7 @@ mod tests {
     #[test]
     fn reserve_accents_preserves_the_accent() {
         let img = accent_image();
-        let p = build(
-            &img,
-            4,
-            PaletteStrategy::ReserveAccentsOklab,
-            0.5,
-            Some(1),
-            0.0,
-        );
+        let p = build(&img, 4, PaletteStrategy::ReserveAccents, 0.5, Some(1), 0.0);
         assert!(
             has_color_near(p.colors(), Rgb([230, 20, 20]), 40),
             "expected a red-ish accent in palette {:?}",
@@ -455,9 +421,9 @@ mod tests {
     }
 
     #[test]
-    fn saliency_oklab_boosts_the_accent() {
+    fn saliency_boosts_the_accent() {
         let img = accent_image();
-        let p = build(&img, 4, PaletteStrategy::SaliencyOklab, 1.0, None, 0.0);
+        let p = build(&img, 4, PaletteStrategy::Saliency, 1.0, None, 0.0);
         assert!(
             has_color_near(p.colors(), Rgb([230, 20, 20]), 60),
             "expected a red-ish accent in palette {:?}",
@@ -474,9 +440,7 @@ mod tests {
         for strategy in [
             PaletteStrategy::Frequency,
             PaletteStrategy::Saliency,
-            PaletteStrategy::SaliencyOklab,
             PaletteStrategy::ReserveAccents,
-            PaletteStrategy::ReserveAccentsOklab,
         ] {
             let p = build(&img, 5, strategy, 0.5, None, 0.0);
             assert!(
@@ -490,7 +454,7 @@ mod tests {
     #[test]
     fn nearest_maps_into_palette() {
         let img = accent_image();
-        let p = build(&img, 4, PaletteStrategy::SaliencyOklab, 0.5, None, 0.0);
+        let p = build(&img, 4, PaletteStrategy::Saliency, 0.5, None, 0.0);
         let mapped = p.nearest(Rgb([200, 30, 30]));
         assert!(p.colors().contains(&mapped));
     }
@@ -535,10 +499,7 @@ mod tests {
         for (x, y, p) in img.enumerate_pixels_mut() {
             *p = Rgb([(x * 5) as u8, (y * 5) as u8, ((x + y) * 3) as u8]);
         }
-        for strategy in [
-            PaletteStrategy::SaliencyOklab,
-            PaletteStrategy::ReserveAccentsOklab,
-        ] {
+        for strategy in [PaletteStrategy::Saliency, PaletteStrategy::ReserveAccents] {
             let p = build(&img, 6, strategy, 0.5, None, 1.0);
             assert!(p.colors().len() <= 6, "{strategy:?}");
         }

@@ -32,7 +32,7 @@ derivations:
     width: 96
     height: 72
     palette_size: 24
-    palette_strategy: saliency_oklab
+    palette_strategy: saliency
     accent_strength: 0.7
 ```
 
@@ -72,7 +72,7 @@ Each entry in `derivations` describes one output image.
   `0.0` lightness counts fully; at `1.0` it is ignored, so colors are
   separated purely by hue and chroma. This keeps dark but saturated hues
   (such as blue) from being absorbed into large clusters of
-  mid-lightness colors. Affects only the `_oklab` strategies.
+  mid-lightness colors. Ignored by the `frequency` strategy.
 
 `width` and `height` must preserve the aspect ratio of the input image
 (within a small tolerance); otherwise the derivation is rejected. The
@@ -84,18 +84,16 @@ resolution is derived automatically from that ratio.
 A plain frequency-weighted quantizer spends its color budget on whatever
 dominates the image by pixel count, so small but vivid accents get averaged
 away and the result looks "muddy". The alternative strategies bias palette
-selection toward perceptually important colors so that accents survive. Each
-comes in a plain variant and an `_oklab` variant; the latter clusters in the
-perceptual OKLab color space, where distinct hues resist being merged.
+selection toward perceptually important colors so that accents survive.
+Apart from `frequency`, they cluster in the perceptual OKLab color space,
+where distinct hues resist being merged.
 
 * `frequency`: Frequency-weighted clustering. The default; tends to average
   away small vivid accents.
 * `saliency`: Reweights the histogram to favor vivid (`accent_strength`) and
-  rare colors before clustering.
-* `saliency_oklab`: Like `saliency`, but clusters in OKLab.
+  rare colors, then clusters in OKLab.
 * `reserve_accents`: Reserves `accent_slots` slots for detected accent
-  colors, then clusters the remaining budget for everything else.
-* `reserve_accents_oklab`: Like `reserve_accents`, but clusters in OKLab.
+  colors, then clusters the remaining budget for everything else in OKLab.
 
 ## License
 
