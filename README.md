@@ -25,15 +25,11 @@ fields:
 input: photo.png
 derivations:
   - output: small.png
-    width: 64
-    height: 48
+    short_side: 48
     palette_size: 16
   - output: poster.png
-    width: 96
-    height: 72
+    short_side: 72
     palette_size: 24
-    palette_strategy: saliency
-    accent_strength: 0.7
 ```
 
 ### Top-level fields
@@ -52,8 +48,9 @@ Each entry in `derivations` describes one output image.
   to PNG because lossy formats such as JPEG reintroduce colors on decode,
   which would defeat the palette reduction; a `.jpg`/`.jpeg` output is
   rejected.
-* `width` (required): Target width.
-* `height` (required): Target height.
+* `short_side` (required): Target size, in pixels, of the *shorter* of the
+  two output dimensions (width or height). The longer dimension is derived
+  from it so that the output preserves the aspect ratio of the input image.
 * `palette_size` (required): Maximum number of distinct colors in the
   output. This is an upper bound only: fewer colors may be used when the
   image does not contain that many, and it places no constraint on *which*
@@ -72,11 +69,6 @@ Each entry in `derivations` describes one output image.
   and hue/chroma contribute equally to clustering (in photographs, where
   lightness varies much more than hue, this lands close to `1.0`). Set an
   explicit value to override. Ignored by the `frequency` strategy.
-
-`width` and `height` must preserve the aspect ratio of the input image
-(within a small tolerance); otherwise the derivation is rejected. The
-upscale factor that brings the result back to approximately the input
-resolution is derived automatically from that ratio.
 
 ### Palette strategies
 

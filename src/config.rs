@@ -22,10 +22,13 @@ pub struct Config {
 pub struct Derivation {
     /// Path to the output image, relative to the configuration file.
     pub output: PathBuf,
-    /// Target width in pixels.
-    pub width: u32,
-    /// Target height in pixels.
-    pub height: u32,
+    /// Target size, in pixels, of the *shorter* of the two output dimensions
+    /// (width or height).
+    ///
+    /// The longer dimension is derived from this one so that the output keeps
+    /// the aspect ratio of the input image. This makes it impossible to request
+    /// dimensions that are incompatible with the input.
+    pub short_side: u32,
     /// The maximum number of distinct colors allowed in the output.
     ///
     /// This is an upper bound only: a derivation may use fewer colors when the
@@ -96,19 +99,16 @@ mod tests {
 input: photo.png
 derivations:
   - output: small.png
-    width: 64
-    height: 48
+    short_side: 48
     palette_size: 16
   - output: tiny.png
-    width: 16
-    height: 16
+    short_side: 16
     palette_size: 4
 ";
         let config: Config = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(config.input, PathBuf::from("photo.png"));
         assert_eq!(config.derivations.len(), 2);
-        assert_eq!(config.derivations[0].width, 64);
-        assert_eq!(config.derivations[0].height, 48);
+        assert_eq!(config.derivations[0].short_side, 48);
         assert_eq!(config.derivations[0].palette_size, 16);
         assert_eq!(config.derivations[1].output, PathBuf::from("tiny.png"));
     }
@@ -119,8 +119,7 @@ derivations:
 input: photo.png
 derivations:
   - output: small.png
-    width: 64
-    height: 48
+    short_side: 48
     palette_size: 16
 ";
         let config: Config = serde_yaml::from_str(yaml).unwrap();
@@ -141,8 +140,7 @@ derivations:
 input: photo.png
 derivations:
   - output: small.png
-    width: 64
-    height: 48
+    short_side: 48
     palette_size: 16
     palette_strategy: {name}
     accent_strength: 0.7
@@ -163,8 +161,7 @@ derivations:
 input: photo.png
 derivations:
   - output: small.png
-    width: 64
-    height: 48
+    short_side: 48
     palette_size: 16
     palette_strategy: nonexistent
 ";

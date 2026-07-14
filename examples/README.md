@@ -21,8 +21,7 @@ $ cat > config.yaml <<'EOF'
 input: input.png
 derivations:
   - output: out.png
-    width: 64
-    height: 48
+    short_side: 48
     palette_size: 16
 EOF
 $ cargo run -- config.yaml
