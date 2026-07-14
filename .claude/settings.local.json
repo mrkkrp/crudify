@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(timeout 120 nix eval --raw .#packages.x86_64-linux.default.name)",
+      "Bash(timeout 60 nix eval nixpkgs#libraw.dev.outPath)",
+      "Bash(timeout 60 nix eval --raw nixpkgs#hugin.pname)",
+      "Bash(cargo generate-lockfile *)",
+      "Bash(nix flake *)",
+      "Bash(nix develop *)",
+      "Bash(nix shell *)",
+      "Bash(nix run *)",
+      "Bash(git add *)",
+      "Bash(nix eval --impure --expr ' *)",
+      "Bash(echo \"===EXIT: $?===\")"
+    ]
+  }
+}

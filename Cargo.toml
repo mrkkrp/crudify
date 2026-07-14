@@ -1,0 +1,8 @@
+[package]
+name = "crudify"
+description = "Reduce resolution and number of colors in preparation for painting"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+
+[dependencies]
