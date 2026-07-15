@@ -39,11 +39,6 @@ pub struct Derivation {
     /// which favors vivid and rare colors so that accents survive.
     #[serde(default)]
     pub palette_strategy: PaletteStrategy,
-    /// How strongly the [`Saliency`](PaletteStrategy::Saliency) strategy favors
-    /// vivid and rare colors, in the range `0.0..=1.0`. Ignored by
-    /// [`PaletteStrategy::Frequency`]. Defaults to [`default_accent_strength`].
-    #[serde(default = "default_accent_strength")]
-    pub accent_strength: f64,
     /// How strongly to de-emphasize lightness when clustering in OKLab, in the
     /// range `0.0..=1.0`. At `0.0` lightness counts fully; at `1.0` it is
     /// ignored, so colors are separated purely by hue and chroma. This keeps
@@ -73,11 +68,6 @@ pub enum PaletteStrategy {
     /// OKLab. The default.
     #[default]
     Saliency,
-}
-
-/// The default value for [`Derivation::accent_strength`].
-pub fn default_accent_strength() -> f64 {
-    0.5
 }
 
 impl Config {
@@ -125,7 +115,6 @@ derivations:
         let config: Config = serde_yaml::from_str(yaml).unwrap();
         let d = &config.derivations[0];
         assert_eq!(d.palette_strategy, PaletteStrategy::Saliency);
-        assert_eq!(d.accent_strength, default_accent_strength());
         assert_eq!(d.lightness_compensation, None);
     }
 
@@ -143,14 +132,12 @@ derivations:
     short_side: 48
     palette_size: 16
     palette_strategy: {name}
-    accent_strength: 0.7
     lightness_compensation: 0.3
 "
             );
             let config: Config = serde_yaml::from_str(&yaml).unwrap();
             let d = &config.derivations[0];
             assert_eq!(d.palette_strategy, expected, "strategy {name}");
-            assert_eq!(d.accent_strength, 0.7);
             assert_eq!(d.lightness_compensation, Some(0.3));
         }
     }

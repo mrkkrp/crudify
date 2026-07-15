@@ -82,8 +82,7 @@ struct ColorCount {
 }
 
 /// Build a palette of at most `palette_size` colors from `source` according to
-/// `strategy`. `accent_strength` (0..=1) controls how strongly the saliency
-/// strategy favors vivid and rare colors.
+/// `strategy`.
 ///
 /// `lightness_compensation` (0..=1) de-emphasizes the lightness axis when
 /// clustering in OKLab so dark but saturated hues stay distinct; it affects
@@ -92,11 +91,9 @@ pub fn build(
     source: &RgbImage,
     palette_size: u32,
     strategy: PaletteStrategy,
-    accent_strength: f64,
     lightness_compensation: f64,
 ) -> Palette {
     let palette_size = palette_size.max(1) as usize;
-    let accent_strength = accent_strength.clamp(0.0, 1.0);
     // The lightness axis weight in OKLab distance: full compensation (1.0)
     // means the axis is ignored (weight 0.0).
     let l_weight = 1.0 - lightness_compensation.clamp(0.0, 1.0);
@@ -108,9 +105,7 @@ pub fn build(
             finish_exoquant(colors)
         }
         PaletteStrategy::Saliency => {
-            let colors = cluster_oklab(&counts, palette_size, l_weight, |c| {
-                saliency_weight(c, accent_strength)
-            });
+            let colors = cluster_oklab(&counts, palette_size, l_weight, saliency_weight);
             finish_oklab(colors, l_weight)
         }
     }
@@ -175,17 +170,16 @@ fn color_counts(source: &RgbImage) -> Vec<ColorCount> {
         .collect()
 }
 
-/// The weight of a color under the saliency strategies.
+/// The weight of a color under the saliency strategy.
 ///
 /// Weight rises with saturation (vividness) and falls with frequency (rarity),
-/// so a small saturated accent competes with a large flat background. At
-/// `strength = 0` this reduces to plain frequency weighting.
-fn saliency_weight(c: &ColorCount, strength: f64) -> u64 {
+/// so a small saturated accent competes with a large flat background.
+fn saliency_weight(c: &ColorCount) -> u64 {
     let saturation = Oklab::from_srgb(c.color).chroma_ratio();
     // Rarity boost: rare colors count for more, damped so a single stray pixel
     // does not dominate. Uses log so the effect is gentle.
     let rarity = 1.0 / (1.0 + (c.count as f64).ln());
-    let boost = 1.0 + strength * (2.0 * saturation + rarity);
+    let boost = 1.0 + 0.5 * (2.0 * saturation + rarity);
     ((c.count as f64) * boost).round().max(1.0) as u64
 }
 
@@ -393,14 +387,14 @@ mod tests {
         // With a small palette, the frequency strategy spends its budget on the
         // dominant gray and may not represent the tiny red accent well.
         let img = accent_image();
-        let p = build(&img, 2, PaletteStrategy::Frequency, 0.5, 0.0);
+        let p = build(&img, 2, PaletteStrategy::Frequency, 0.0);
         assert!(p.colors().len() <= 2);
     }
 
     #[test]
     fn saliency_boosts_the_accent() {
         let img = accent_image();
-        let p = build(&img, 4, PaletteStrategy::Saliency, 1.0, 0.0);
+        let p = build(&img, 4, PaletteStrategy::Saliency, 0.0);
         assert!(
             has_color_near(p.colors(), Rgb([230, 20, 20]), 60),
             "expected a red-ish accent in palette {:?}",
@@ -415,7 +409,7 @@ mod tests {
             *p = Rgb([(x * 8) as u8, (y * 8) as u8, ((x + y) * 4) as u8]);
         }
         for strategy in [PaletteStrategy::Frequency, PaletteStrategy::Saliency] {
-            let p = build(&img, 5, strategy, 0.5, 0.0);
+            let p = build(&img, 5, strategy, 0.0);
             assert!(
                 p.colors().len() <= 5,
                 "{strategy:?} produced {} colors",
@@ -427,7 +421,7 @@ mod tests {
     #[test]
     fn nearest_maps_into_palette() {
         let img = accent_image();
-        let p = build(&img, 4, PaletteStrategy::Saliency, 0.5, 0.0);
+        let p = build(&img, 4, PaletteStrategy::Saliency, 0.0);
         let mapped = p.nearest(Rgb([200, 30, 30]));
         assert!(p.colors().contains(&mapped));
     }
@@ -473,7 +467,7 @@ mod tests {
             *p = Rgb([(x * 5) as u8, (y * 5) as u8, ((x + y) * 3) as u8]);
         }
         for strategy in [PaletteStrategy::Frequency, PaletteStrategy::Saliency] {
-            let p = build(&img, 6, strategy, 0.5, 1.0);
+            let p = build(&img, 6, strategy, 1.0);
             assert!(p.colors().len() <= 6, "{strategy:?}");
         }
     }

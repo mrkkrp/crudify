@@ -89,7 +89,6 @@ fn process_derivation(
         derivation.palette_size,
         pixelate::PaletteOptions {
             strategy: derivation.palette_strategy,
-            accent_strength: derivation.accent_strength,
             lightness_compensation: derivation
                 .lightness_compensation
                 .unwrap_or(default_lightness_compensation),
