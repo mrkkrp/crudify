@@ -1,5 +1,7 @@
 # Crudify
 
+[![CI](https://github.com/mrkkrp/crudify/actions/workflows/ci.yaml/badge.svg)](https://github.com/mrkkrp/crudify/actions/workflows/ci.yaml)
+
 Reduce resolution and number of colors in preparation for painting.
 
 ## Usage
