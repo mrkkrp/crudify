@@ -39,18 +39,18 @@ pub struct Derivation {
     /// which favors vivid and rare colors so that accents survive.
     #[serde(default)]
     pub palette_strategy: PaletteStrategy,
-    /// How strongly to de-emphasize lightness when clustering in OKLab, in the
-    /// range `0.0..=1.0`. At `0.0` lightness counts fully; at `1.0` it is
-    /// ignored, so colors are separated purely by hue and chroma. This keeps
-    /// dark but saturated hues (such as blue) from being absorbed into large
-    /// clusters of mid-lightness colors.
+    /// How strongly to emphasize hue and chroma over lightness when clustering
+    /// in OKLab, in the range `0.0..=1.0`. At `0.0` lightness counts fully; at
+    /// `1.0` it is ignored, so colors are separated purely by hue and chroma.
+    /// This keeps dark but saturated hues (such as blue) from being absorbed
+    /// into large clusters of mid-lightness colors.
     ///
     /// When absent, a value is chosen automatically from the input image so
     /// that lightness and hue/chroma contribute equally to clustering distance
-    /// (see [`crate::palette::adaptive_lightness_compensation`]). Set an
-    /// explicit value to override. Ignored by the `frequency` strategy.
+    /// (see [`crate::palette::adaptive_hue_emphasis`]). Set an explicit value
+    /// to override. Ignored by the `frequency` strategy.
     #[serde(default)]
-    pub lightness_compensation: Option<f64>,
+    pub hue_emphasis: Option<f64>,
 }
 
 /// The palette selection strategy for a derivation.
@@ -115,7 +115,7 @@ derivations:
         let config: Config = serde_yaml::from_str(yaml).unwrap();
         let d = &config.derivations[0];
         assert_eq!(d.palette_strategy, PaletteStrategy::Saliency);
-        assert_eq!(d.lightness_compensation, None);
+        assert_eq!(d.hue_emphasis, None);
     }
 
     #[test]
@@ -132,13 +132,13 @@ derivations:
     short_side: 48
     palette_size: 16
     palette_strategy: {name}
-    lightness_compensation: 0.3
+    hue_emphasis: 0.3
 "
             );
             let config: Config = serde_yaml::from_str(&yaml).unwrap();
             let d = &config.derivations[0];
             assert_eq!(d.palette_strategy, expected, "strategy {name}");
-            assert_eq!(d.lightness_compensation, Some(0.3));
+            assert_eq!(d.hue_emphasis, Some(0.3));
         }
     }
 

@@ -40,10 +40,10 @@ pub fn run(config_path: impl AsRef<Path>) -> Result<()> {
 
     let input_dims = source.dimensions();
 
-    // The default lightness compensation is derived once from the input image
-    // so that lightness and hue/chroma contribute equally to clustering; a
-    // derivation may override it with an explicit value.
-    let default_lightness_compensation = palette::adaptive_lightness_compensation(&source);
+    // The default hue emphasis is derived once from the input image so that
+    // lightness and hue/chroma contribute equally to clustering; a derivation
+    // may override it with an explicit value.
+    let default_hue_emphasis = palette::adaptive_hue_emphasis(&source);
 
     // Derivations are independent: each builds its own palette and downsamples
     // from the shared, immutable source, then writes a distinct output file. We
@@ -55,7 +55,7 @@ pub fn run(config_path: impl AsRef<Path>) -> Result<()> {
             derivation,
             &source,
             input_dims,
-            default_lightness_compensation,
+            default_hue_emphasis,
             base_dir,
         )
     })
@@ -66,7 +66,7 @@ fn process_derivation(
     derivation: &Derivation,
     source: &RgbImage,
     input_dims: (u32, u32),
-    default_lightness_compensation: f64,
+    default_hue_emphasis: f64,
     base_dir: &Path,
 ) -> Result<()> {
     let (input_width, input_height) = input_dims;
@@ -89,9 +89,7 @@ fn process_derivation(
         derivation.palette_size,
         pixelate::PaletteOptions {
             strategy: derivation.palette_strategy,
-            lightness_compensation: derivation
-                .lightness_compensation
-                .unwrap_or(default_lightness_compensation),
+            hue_emphasis: derivation.hue_emphasis.unwrap_or(default_hue_emphasis),
         },
     )
     .with_context(|| {

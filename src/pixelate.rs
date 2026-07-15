@@ -29,9 +29,9 @@ use crate::palette;
 pub struct PaletteOptions {
     /// The palette selection strategy.
     pub strategy: PaletteStrategy,
-    /// Lightness de-emphasis for OKLab clustering (`0..=1`); see
-    /// [`crate::config::Derivation::lightness_compensation`].
-    pub lightness_compensation: f64,
+    /// Hue/chroma emphasis over lightness for OKLab clustering (`0..=1`); see
+    /// [`crate::config::Derivation::hue_emphasis`].
+    pub hue_emphasis: f64,
 }
 
 /// Produce a `width`x`height` image using at most `palette_size` distinct
@@ -55,12 +55,7 @@ pub fn pixelate(
 
     // (1) Build the palette from the color distribution of the *whole* source
     // image, so palette selection sees every original color.
-    let palette = palette::build(
-        source,
-        palette_size,
-        options.strategy,
-        options.lightness_compensation,
-    );
+    let palette = palette::build(source, palette_size, options.strategy, options.hue_emphasis);
 
     // (2) Downsample: each output cell averages the source pixels that map into
     // it, then snaps to the nearest palette color.
@@ -123,7 +118,7 @@ mod tests {
     fn default_options() -> PaletteOptions {
         PaletteOptions {
             strategy: PaletteStrategy::Frequency,
-            lightness_compensation: 0.0,
+            hue_emphasis: 0.0,
         }
     }
 

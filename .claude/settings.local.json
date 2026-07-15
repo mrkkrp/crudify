@@ -28,7 +28,8 @@
       "Bash(echo \"exit=$?\")",
       "Bash(time ./target/release/crudify street.yaml)",
       "Bash(time ./target/release/crudify street.yaml landscape.yaml)",
-      "Bash(./target/release/crudify street.yaml landscape.yaml)"
+      "Bash(./target/release/crudify street.yaml landscape.yaml)",
+      "Bash(cargo fmt *)"
     ]
   }
 }

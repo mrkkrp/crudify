@@ -60,7 +60,7 @@ Each entry in `derivations` describes one output image.
   colors are used.
 * `palette_strategy` (optional, default `saliency`): How the palette is
   chosen. See [Palette strategies](#palette-strategies).
-* `lightness_compensation` (optional): How strongly to de-emphasize
+* `hue_emphasis` (optional): How strongly to emphasize hue and chroma over
   lightness when clustering, in the range `0.0..=1.0`. At `0.0` lightness
   counts fully; at `1.0` it is ignored, so colors are separated purely by
   hue and chroma. This keeps dark but saturated hues (such as blue) from

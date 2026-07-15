@@ -84,19 +84,19 @@ struct ColorCount {
 /// Build a palette of at most `palette_size` colors from `source` according to
 /// `strategy`.
 ///
-/// `lightness_compensation` (0..=1) de-emphasizes the lightness axis when
-/// clustering in OKLab so dark but saturated hues stay distinct; it affects
-/// only the [`Saliency`](PaletteStrategy::Saliency) strategy.
+/// `hue_emphasis` (0..=1) emphasizes hue and chroma over the lightness axis
+/// when clustering in OKLab so dark but saturated hues stay distinct; it
+/// affects only the [`Saliency`](PaletteStrategy::Saliency) strategy.
 pub fn build(
     source: &RgbImage,
     palette_size: u32,
     strategy: PaletteStrategy,
-    lightness_compensation: f64,
+    hue_emphasis: f64,
 ) -> Palette {
     let palette_size = palette_size.max(1) as usize;
-    // The lightness axis weight in OKLab distance: full compensation (1.0)
+    // The lightness axis weight in OKLab distance: full hue emphasis (1.0)
     // means the axis is ignored (weight 0.0).
-    let l_weight = 1.0 - lightness_compensation.clamp(0.0, 1.0);
+    let l_weight = 1.0 - hue_emphasis.clamp(0.0, 1.0);
     let counts = color_counts(source);
 
     match strategy {
@@ -111,21 +111,21 @@ pub fn build(
     }
 }
 
-/// The `lightness_compensation` value that makes lightness and hue/chroma
-/// contribute equally to OKLab clustering distance for `source`.
+/// The `hue_emphasis` value that makes lightness and hue/chroma contribute
+/// equally to OKLab clustering distance for `source`.
 ///
 /// Clustering distance is `l_weight * dL^2 + da^2 + db^2` where `l_weight =
-/// 1 - lightness_compensation`. The expected contribution of the lightness term
-/// over the image is proportional to `l_weight * Var(L)`, and of the hue/chroma
-/// terms to `Var(a) + Var(b)`. Equating them gives
+/// 1 - hue_emphasis`. The expected contribution of the lightness term over the
+/// image is proportional to `l_weight * Var(L)`, and of the hue/chroma terms to
+/// `Var(a) + Var(b)`. Equating them gives
 /// `l_weight = (Var(a) + Var(b)) / Var(L)`, so
-/// `lightness_compensation = 1 - (Var(a) + Var(b)) / Var(L)`.
+/// `hue_emphasis = 1 - (Var(a) + Var(b)) / Var(L)`.
 ///
 /// In photographs lightness varies far more than hue/chroma, so this is
 /// typically close to `1.0`. The result is clamped to `0.0..=1.0` (a flat-lit,
 /// very colorful image could otherwise ask to *amplify* lightness, which is not
 /// meaningful). A degenerate image with no lightness variation yields `0.0`.
-pub fn adaptive_lightness_compensation(source: &RgbImage) -> f64 {
+pub fn adaptive_hue_emphasis(source: &RgbImage) -> f64 {
     let (mut sl, mut sa, mut sb) = (0.0f64, 0.0f64, 0.0f64);
     let (mut sll, mut saa, mut sbb) = (0.0f64, 0.0f64, 0.0f64);
     let mut n = 0.0f64;
@@ -340,7 +340,7 @@ mod tests {
             let v = (x * 4) as u8;
             *p = Rgb([v, v, v]);
         }
-        let lc = adaptive_lightness_compensation(&img);
+        let lc = adaptive_hue_emphasis(&img);
         assert!(lc > 0.9, "expected near 1.0, got {lc}");
     }
 
@@ -348,7 +348,7 @@ mod tests {
     fn adaptive_compensation_is_zero_for_flat_image() {
         // No variation at all: no lightness variance, so it returns 0.0.
         let img = RgbImage::from_pixel(16, 16, Rgb([100, 120, 140]));
-        assert_eq!(adaptive_lightness_compensation(&img), 0.0);
+        assert_eq!(adaptive_hue_emphasis(&img), 0.0);
     }
 
     #[test]
@@ -358,7 +358,7 @@ mod tests {
         for (x, y, p) in img.enumerate_pixels_mut() {
             *p = Rgb([(x * 5) as u8, (y * 5) as u8, ((x + y) * 3) as u8]);
         }
-        let lc = adaptive_lightness_compensation(&img);
+        let lc = adaptive_hue_emphasis(&img);
         assert!((0.0..=1.0).contains(&lc), "out of range: {lc}");
     }
 
@@ -427,7 +427,7 @@ mod tests {
     }
 
     #[test]
-    fn lightness_compensation_changes_nearest_color_choice() {
+    fn hue_emphasis_changes_nearest_color_choice() {
         // Two palette colors: one matches the target's hue but differs in
         // lightness; the other matches the lightness but is a neutral gray.
         // Map a dark saturated blue. With lightness counting fully, the neutral
@@ -460,7 +460,7 @@ mod tests {
     }
 
     #[test]
-    fn lightness_compensation_respects_palette_size() {
+    fn hue_emphasis_respects_palette_size() {
         // Full compensation must still produce a valid, bounded palette.
         let mut img = RgbImage::new(48, 48);
         for (x, y, p) in img.enumerate_pixels_mut() {
