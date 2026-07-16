@@ -47,10 +47,8 @@ derivations:
 Each entry in `derivations` describes one output image.
 
 * `output` (required): Path to the output image, relative to the
-  configuration file. Must have a `.png` extension. Output is restricted
-  to PNG because lossy formats such as JPEG reintroduce colors on decode,
-  which would defeat the palette reduction; a `.jpg`/`.jpeg` output is
-  rejected.
+  configuration file. The format is chosen from the extension: `.png`,
+  `.jpg`, or `.jpeg`.
 * `short_side` (required): Target size, in pixels, of the *shorter* of the
   two output dimensions (width or height). The longer dimension is derived
   from it so that the output preserves the aspect ratio of the input image.
